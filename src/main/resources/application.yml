@@ -1,0 +1,45 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: streaming-rag-java
+  threads:
+    virtual:
+      enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+
+app:
+  kafka:
+    topic: system-logs
+    dlq-topic: system-logs-dlq
+    group-id: streaming-rag-consumer-group
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    partitions: 4
+    replication-factor: 1
+  producer:
+    enabled: ${APP_PRODUCER_ENABLED:true}
+    fixed-rate-ms: ${APP_PRODUCER_FIXED_RATE_MS:1000}
+  lucene:
+    index-path: ${APP_LUCENE_INDEX_PATH:./data/lucene-index}
+    in-memory: ${APP_LUCENE_IN_MEMORY:false}
+    timeout-seconds: 15
+  ollama:
+    base-url: ${APP_OLLAMA_BASE_URL:http://localhost:11434}
+    model-name: ${APP_OLLAMA_MODEL_NAME:llama3.2:3b}
+    temperature: 0.0
+    timeout-seconds: ${APP_OLLAMA_TIMEOUT_SECONDS:240}
+
+logging:
+  level:
+    com.streamingrag: INFO
+    org.apache.kafka: WARN

@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: streaming-rag-java-test
+  kafka:
+    bootstrap-servers: localhost:9092
+    listener:
+      auto-startup: false
+
+app:
+  kafka:
+    topic: test-system-logs
+    dlq-topic: test-system-logs-dlq
+    group-id: test-consumer-group
+    bootstrap-servers: localhost:9092
+    partitions: 1
+    replication-factor: 1
+  producer:
+    enabled: false
+    fixed-rate-ms: 500
+  lucene:
+    index-path: target/lucene-test-index
+    in-memory: true
+    timeout-seconds: 5
+  ollama:
+    base-url: http://localhost:11434
+    model-name: llama3.2:3b
+    temperature: 0.0
+    timeout-seconds: 10

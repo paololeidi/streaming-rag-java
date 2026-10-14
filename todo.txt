@@ -1,0 +1,4 @@
+- improve test coverage
+- check status of both projects
+- langsmith
+- improve demos

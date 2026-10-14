@@ -1,0 +1,40 @@
+replicaCount: 2
+
+image:
+  repository: streaming-rag-java
+  pullPolicy: IfNotPresent
+  tag: "1.0.0"
+
+service:
+  type: ClusterIP
+  port: 8080
+
+config:
+  kafkaBootstrapServers: "kafka:9092"
+  luceneIndexPath: "/app/data/lucene-index"
+  ollamaBaseUrl: "http://ollama:11434"
+  ollamaModel: "llama3.2:3b"
+  producerEnabled: true
+  producerFixedRateMs: 1000
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2048Mi
+  requests:
+    cpu: 500m
+    memory: 1024Mi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 15
+  periodSeconds: 5
