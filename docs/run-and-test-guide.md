@@ -1,4 +1,4 @@
-# Enterprise Streaming RAG in Java: End-to-End Usage & Verification Guide
+# Enterprise Streaming RAG in Java: Build, Run & Test Guide
 
 This comprehensive guide walks you through interacting with and verifying every layer of the **Enterprise Streaming RAG in Java** architecture:
 - **Event-Driven Log Ingestion:** Datafaker -> Apache Kafka -> In-process ONNX Embedding -> Embedded Apache Lucene.

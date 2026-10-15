@@ -121,8 +121,34 @@ class SystemLogTest {
         );
 
         String json = objectMapper.writeValueAsString(original);
-        SystemLog deserialized = objectMapper.readValue(json, SystemLog.class);
+        assertThat(json).contains("\"event_id\":");
+        assertThat(json).contains("\"service_name\":\"frontend-bff\"");
+        assertThat(json).contains("\"log_level\":\"INFO\"");
 
+        SystemLog deserialized = objectMapper.readValue(json, SystemLog.class);
         assertThat(deserialized).isEqualTo(original);
+    }
+
+    @Test
+    @DisplayName("Should deserialize legacy camelCase JSON payload from older producers")
+    void shouldDeserializeLegacyCamelCaseJson() throws Exception {
+        String legacyJson = """
+                {
+                  "eventId": "d3b07384-d113-40e1-bbbb-000000000001",
+                  "timestamp": "2026-10-12T12:00:00Z",
+                  "serviceName": "payment-gateway",
+                  "logLevel": "ERROR",
+                  "message": "Payment failed",
+                  "stackTrace": "java.lang.Exception: trace"
+                }
+                """;
+
+        SystemLog log = objectMapper.readValue(legacyJson, SystemLog.class);
+
+        assertThat(log.eventId()).isEqualTo(UUID.fromString("d3b07384-d113-40e1-bbbb-000000000001"));
+        assertThat(log.serviceName()).isEqualTo("payment-gateway");
+        assertThat(log.logLevel()).isEqualTo(LogLevel.ERROR);
+        assertThat(log.message()).isEqualTo("Payment failed");
+        assertThat(log.stackTrace()).isEqualTo("java.lang.Exception: trace");
     }
 }

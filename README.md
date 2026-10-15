@@ -83,7 +83,7 @@ Make sure the following tools are available on your system before startup:
 
 If you prefer to configure, build, and run the stack manually step-by-step (Docker Compose, individual services, Kafka KRaft, Kubernetes/Helm, or automated test suites):
 
-👉 **[docs/usage-guide.md](docs/usage-guide.md)**
+👉 **[docs/run-and-test-guide.md](docs/run-and-test-guide.md)**
 
 ---
 
@@ -106,18 +106,19 @@ If you prefer to configure, build, and run the stack manually step-by-step (Dock
 
 All execution instructions, technical specifications, and architectural details are organized in the `docs/` directory:
 
-- 📖 **[Usage & Verification Guide](docs/usage-guide.md)**  
-  Step-by-step instructions for running the environment, verifying health, testing synchronous and streaming REST APIs (cURL & PowerShell), executing Model Context Protocol (MCP) tools, and configuring Cursor IDE & Claude Desktop.
+| Doc | Description |
+|---|---|
+| [docs/technical-guide.md](docs/technical-guide.md) | **Comprehensive system architecture & technical implementation guide** |
+| [docs/run-and-test-guide.md](docs/run-and-test-guide.md) | **Step-by-step build, run, and testing playbook** |
+| [AGENT_GUIDE.md](AGENT_GUIDE.md) | **AI Agent & Coding Assistant Runbook (Automated onboarding & testing)** |
+| [docs/architecture-decisions.md](docs/architecture-decisions.md) | Architecture Decision Records (ADRs) |
+| [docs/data-contract.md](docs/data-contract.md) | Java 21 Record schema & serialization data contract |
+| [docs/improvements.md](docs/improvements.md) | Production improvements & enterprise backlog |
 
-- 📐 **[Technical Architecture & System Guide](docs/technical-guide.md)**  
-  In-depth technical specification detailing the project purpose, end-to-end data pipeline, in-process ONNX vectorization, embedded Apache Lucene vector search, agentic ReAct loop, guardrails, and enterprise fault tolerance mechanisms.
+---
 
-- 🏛️ **[Architecture Decision Records (ADRs)](docs/architecture-decisions.md)**  
-  Formal ADRs covering Java 21 Virtual Threads, LangChain4j, Apache Lucene embedded vector storage, in-process ONNX embeddings, manual Kafka offset commits, and MCP tool boundaries.
+## Development approach
 
-- 📋 **[Data Contract Specification](docs/data-contract.md)**  
-  Formal schema definitions for `SystemLog` records, partition routing by `serviceName`, serialization formats, and embedding text normalization.
+This project was developed through pair programming and active collaboration with AI coding assistants. The workflow treats AI as a collaborative engineering partner: it accelerates implementation and surfaces alternatives, while architectural decisions, design trade-offs, and code review remain the developer's responsibility.
 
-
-- 🚀 **[Improvements Roadmap](docs/improvements.md)**  
-  Strategic production evolution roadmap matching the Python sister project (multi-tenancy, distributed vector scaling, and advanced evaluation).
+This includes: choosing when to use semantic search vs. metadata filtering, structuring the ReAct agent's tool selection logic, deciding on in-process ONNX embeddings vs sidecars, Lucene HNSW graph indexing vs external vector containers, and making the judgment calls that determine whether generated code is actually production-ready — not just syntactically valid.

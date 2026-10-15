@@ -4,6 +4,28 @@ This document outlines the detailed technical roadmap designed to transition the
 
 ---
 
+## 🔄 Cross-Repository Parity & Alignment Backlog (from Python Sister Project)
+
+The following architectural and functional capabilities exist in the Python implementation ([`streaming-rag`](https://github.com/paololeidi/streaming-rag)) and are prioritized here for future Java alignment:
+
+- [ ] **J0.1 Interactive OpenAPI / Swagger UI:**
+  - *Current limitation:* Spring Boot exposes REST endpoints (`/api/v1/query`, `/health`), but lacks interactive API documentation or a Swagger UI browser playground.
+  - *Python counterpart:* FastAPI provides native OpenAPI specifications and interactive Swagger UI out of the box at `/docs`. Java should integrate `springdoc-openapi-starter-webmvc-ui` to expose `/swagger-ui.html`.
+- [ ] **J0.2 Sliding Time Window Filtering in `logStats`:**
+  - *Current limitation:* Java's `SreTools.logStats()` returns cumulative in-memory counts tracked since application startup, ignoring the requested `minutes` parameter.
+  - *Python counterpart:* Python's `log_stats` tool queries vector store metadata and filters records dynamically against a sliding UTC timestamp cutoff (`datetime.now() - timedelta(minutes=minutes)`). Java should execute a Lucene range filter across the `timestamp` field to compute windowed distributions.
+- [ ] **J0.3 Dynamic MCP Client Capabilities:**
+  - *Current limitation:* The Java application functions as an MCP server (SSE and stdio), but cannot dynamically load tools from external MCP servers.
+  - *Python counterpart:* FastAPI's lifespan uses `MultiServerMCPClient` to connect to external MCP servers defined via `MCP_SERVER_URL` and registers their tools dynamically into the LangGraph ReAct agent.
+- [ ] **J0.4 Kubernetes Kind Deployment Script & Helpers:**
+  - *Current limitation:* Java's Helm chart is minimal (application only) and has no automated local Kind cluster provisioning script.
+  - *Python counterpart:* Contains a parameterized Helm chart with Kafka/Ollama dependencies, `_helpers.tpl`, `NOTES.txt`, and a reproducible `scripts/kind-deploy.sh` script.
+- [ ] **J0.5 Observability & LLM Tracing (LangSmith / OpenTelemetry):**
+  - *Current limitation:* Tracing is noted in `todo.txt`, but not yet configured.
+  - *Python counterpart:* Native LangSmith tracing enabled via standard environment variables (`LANGCHAIN_TRACING_V2=true`). Java should configure LangChain4j model listeners or OpenTelemetry exporter.
+
+---
+
 ## 🎯 Strategic Priorities Overview
 
 ```

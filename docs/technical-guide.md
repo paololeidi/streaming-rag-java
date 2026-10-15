@@ -427,7 +427,7 @@ The technical architecture is governed by six formal Architectural Decision Reco
 
 For detailed instructions, implementation contracts, and test plans, consult the accompanying documentation:
 
-- 📖 **[End-to-End Usage & Verification Guide](file:///C:/Users/Utente/Projects/streaming-rag-java/docs/usage-guide.md):** Complete walkthrough of deployment modes, cURL/PowerShell commands, and Cursor/Claude setup.
+- 📖 **[Build, Run & Test Guide](file:///C:/Users/Utente/Projects/streaming-rag-java/docs/run-and-test-guide.md):** Complete walkthrough of deployment modes, cURL/PowerShell commands, and Cursor/Claude setup.
 - 🏛️ **[Architectural Decision Records (ADRs)](file:///C:/Users/Utente/Projects/streaming-rag-java/docs/architecture-decisions.md):** Detailed technical problem statements, evaluated options, and trade-offs.
 - 📋 **[Data Contract Specification](file:///C:/Users/Utente/Projects/streaming-rag-java/docs/data-contract.md):** Formal schemas for `SystemLog`, Kafka partition keys, and Lucene fields.
 - 🚀 **[Improvements Roadmap](file:///C:/Users/Utente/Projects/streaming-rag-java/docs/improvements.md):** Production hardening, hybrid search, multi-tenancy, and LLMOps evaluation roadmap.
