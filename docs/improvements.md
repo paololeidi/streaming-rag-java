@@ -50,15 +50,16 @@ Phase 5: Interactive Demo & Showcase (Web UI, Live Incident Demo Script)
 
 **Goal:** Eliminate single points of failure, ensure code correctness through automated testing, and optimize ingestion throughput.
 
-- [x] **1.1 Comprehensive Test Suite (JUnit 5 + Mockito + Testcontainers):**
+- [x] **1.1 Baseline Test Suite (JUnit 5 + Mockito + Testcontainers):**
   - **Unit Tests:**
     - Test `SystemLog` Java 21 Record validation (valid logs, missing required fields, ISO-8601 parsing, metadata consistency).
     - Test `toEmbeddingText()` chunk transformation and normalization rules.
     - Test `Prompts` template formatting and system guardrail assembly.
     - Mock Apache Lucene repository and LangChain4j embedding store to unit-test `vectorSearch` and `logStats` tools in isolation.
   - **Integration Tests:**
-    - Test Spring MVC endpoints (`/health`, `/api/v1/query`, `/api/v1/query/stream` SSE) using `MockMvc`.
-    - End-to-end ingestion pipeline verification via `LogPipelineIntegrationTest`: push log -> consume -> embed with in-process ONNX -> verify vector persistence.
+    - Existing controller tests exercise endpoint methods and agent construction; they do not establish full MVC request/streaming coverage.
+    - `LogPipelineIntegrationTest` exercises producer/consumer behavior with Testcontainers Kafka, but mocks `VectorStoreRepository`; it does not verify ONNX embedding or Lucene persistence.
+  - **Remaining verification gaps:** Add real Kafka-to-ONNX-to-Lucene integration coverage, MVC contract tests, and question-to-evidence agent evaluations in items 1.5 and 3.1–3.2.
 - [x] **1.2 CI/CD Pipeline (GitHub Actions for Java):**
   - Created `.github/workflows/ci.yml` executing on every pull request, push to `main`/`master`, and `workflow_dispatch`.
   - Configured Maven Wrapper (`mvnw` / `mvnw.cmd`) pinned to Apache Maven 3.9.9 and JDK 21 (Eclipse Temurin).
@@ -75,6 +76,11 @@ Phase 5: Interactive Demo & Showcase (Web UI, Live Incident Demo Script)
   - Implement a dedicated Dead Letter Queue consumer for `system-logs-dlq` to inspect and quarantine poisoned messages.
   - Add an automated exponential backoff retry mechanism with dead-letter replay endpoints (`POST /api/v1/admin/dlq/replay`).
   - Add structured Spring Boot lifecycle logging with dependency readiness health indicators (Kafka KRaft broker and Apache Lucene readiness polling).
+- [ ] **1.5 Question-to-Evidence End-to-End Tests:**
+  - After adding real pipeline integration coverage, seed a small, controlled incident and submit a representative question through the query API.
+  - Assert that retrieval returns the expected event IDs and that the answer reflects required evidence and key facts; do not compare generated prose to an exact answer string.
+  - Include ambiguous and contradictory evidence cases, such as a log message saying “insufficient funds” whose exception stack trace reports a socket timeout. Require the answer to distinguish the message from the exception, acknowledge conflicts, and avoid asserting an unproven single root cause.
+  - Verify citation IDs resolve to retrieved records and that unsupported details are not presented as established facts. Keep deterministic retrieval/API assertions in CI and place live-model variability in the evaluation suite.
 
 ---
 
@@ -110,15 +116,22 @@ Phase 5: Interactive Demo & Showcase (Web UI, Live Incident Demo Script)
   - Fields per scenario:
     - `query`: The user question.
     - `relevant_log_ids`: Ground truth log entries that must be retrieved.
-    - `expected_answer`: Reference root-cause explanation.
+    - `expected_facts`: Required evidence-backed facts and acceptable root-cause conclusions, rather than one exact answer string.
+    - `unsupported_claims`: Conclusions the evidence does not support and the answer must not assert.
+    - `conflicting_evidence`: Optional competing log fields or records the answer should distinguish or qualify.
     - `expected_tools`: The tools that should have been invoked (`vectorSearch`, `logStats`, etc.).
-- [ ] **3.2 Automated RAG & Agent Evaluation Pipeline:**
-  - Integrate an LLM evaluation framework (e.g., **Ragas**, **DeepEval**, or LangChain4j Evaluation module):
-    - **Context Precision & Recall:** Evaluate retrieval quality (Hit Rate @ K, Mean Reciprocal Rank MRR).
-    - **Faithfulness:** Quantify hallucination by verifying that claims in the answer are grounded strictly in retrieved logs.
-    - **Answer Relevance:** Measure how directly the answer addresses the incident prompt.
-  - Expose an automated evaluation runner generating a markdown evaluation summary report.
-- [ ] **3.3 Observability & OpenTelemetry / LangSmith Tracing:**
+- [ ] **3.2 Deterministic Agent & RAG Evaluation Pipeline:**
+  - Add reproducible tests with a stubbed LLM to verify query routing, expected tool calls, evidence propagation, citation mapping, and API response contracts against controlled fixtures. These tests validate orchestration and evidence handling, not the semantic quality of a live model's generated answer.
+  - Score retrieval independently with Hit Rate @ K, Recall @ K, and Mean Reciprocal Rank so retrieval regressions are separable from generation variability.
+  - Use fixed fixture answers where deterministic answer assembly needs coverage; compare against semantic criteria or structured results, never exact prose from a generative model.
+  - Expose an automated evaluation runner that generates a machine-readable result and concise summary report.
+- [ ] **3.3 Optional Live-Model Evaluation & Quality Gates:**
+  - Run a small curated question set against the configured Ollama model as a separate, opt-in or scheduled evaluation, not as a timing-sensitive unit test on every CI run.
+  - Record model name/version, prompt/configuration, retrieved evidence, answer, latency, and per-criterion scores to make regressions diagnosable and comparisons reproducible.
+  - Evaluate whether required facts are present, claims are grounded in retrieved evidence, conflicts and uncertainty are represented, citations point to relevant records, and unsupported claims are avoided. Use semantic criteria or a calibrated evaluator; do not require exact answer wording.
+  - Consider an evaluation framework (e.g., Ragas, DeepEval, or LangChain4j evaluation support) for context precision/recall, faithfulness, and answer relevance, while keeping evaluator variability visible in results.
+  - Define explicit acceptance thresholds for evidence coverage, citation relevance, unsupported-claim rate, and correct handling of ambiguous evidence before using results as a release gate.
+- [ ] **3.4 Observability & OpenTelemetry / LangSmith Tracing:**
   - Configure OpenTelemetry and Spring Boot Actuator tracing for:
     - Token consumption, tool execution latencies, LLM invocation duration.
     - Agent decision trajectories and ReAct tool-call arguments.
