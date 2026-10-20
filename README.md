@@ -69,13 +69,22 @@ The easiest and fastest way to set up, launch, and verify the project is to let 
 Simply prompt your assistant:
 > *"Start the application following the agent guide"*
 
-The agent will ask you whether you prefer **Path A (Full Docker Compose - zero local setup)** or **Path B (Local Java 21 / Ollama hybrid development)**, and will then autonomously verify prerequisites, launch services, seed initial logs, execute health checks and test queries, and deliver working endpoints.
+The agent will ask you whether you prefer **Option A (Full stack in Docker - zero local setup)** or **Option B (Lean local dev - Kafka in Docker, Java 21 & Ollama native)**, and will then autonomously verify prerequisites, launch services, seed initial logs, execute health checks and test queries, and deliver working endpoints.
 
 ### Prerequisites
-Make sure the following tools are available on your system before startup:
-- **Docker & Docker Compose** (running daemon, required for containers / Kafka KRaft broker).
-- **Ollama** running with the model pulled: `ollama pull llama3.2:3b` (required for local LLM inference in hybrid mode).
-- **Java 21 LTS** & **Maven 3.9+** (or use the included `./mvnw` / `mvnw.cmd` wrapper; required only if choosing local hybrid development).
+
+What you need depends on the option you choose:
+
+| Requirement | Option A: Full stack in Docker | Option B: Lean local dev |
+|---|:---:|:---:|
+| **Docker + Docker Compose** (daemon running) | ✅ Required | ✅ Required (Kafka only) |
+| **Ollama** with `llama3.2:3b` pulled | ➖ Not needed (runs in a container; the model is pulled inside it) | ✅ Required (`ollama pull llama3.2:3b`) |
+| **Java 21 LTS** | ➖ Not needed (built inside the container) | ✅ Required |
+| **Maven 3.9+** | ➖ Not needed | ➖ Optional (use the included `./mvnw` / `mvnw.cmd` wrapper) |
+
+**Option A therefore needs only Docker with Compose**, plus **enough memory for the container engine:** the model, JVM, and Kafka run together, so allocate more than the 2 GB default some Docker/Podman VMs use (4 GB+ recommended).
+
+> **Podman users:** Podman works too, but `podman compose` requires a Compose provider (`docker-compose` or `podman-compose`) to be installed.
 
 ---
 
