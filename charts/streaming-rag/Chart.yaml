@@ -1,6 +1,6 @@
 apiVersion: v2
 name: streaming-rag
-description: Enterprise Streaming RAG Java Helm Chart for Kubernetes
+description: Enterprise Streaming RAG in Java — Kafka (KRaft), Ollama (+ model pull Job), Spring Boot 3.3, LangChain4j, Embedded Apache Lucene 9, and MCP
 type: application
 version: 1.0.0
 appVersion: "1.0.0"
@@ -9,5 +9,6 @@ keywords:
   - spring-boot
   - kafka
   - langchain4j
+  - lucene
   - rag
   - mcp

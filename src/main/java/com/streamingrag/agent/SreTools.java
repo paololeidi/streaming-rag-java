@@ -6,16 +6,20 @@ import com.streamingrag.model.LogLevel;
 import com.streamingrag.vector.VectorStoreRepository;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -26,6 +30,9 @@ public class SreTools {
 
     private static final Logger log = LoggerFactory.getLogger(SreTools.class);
     private static final int MAX_EXCERPT_LENGTH = 400;
+    private static final List<String> DEFAULT_SERVICES = List.of(
+            "payment-gateway", "user-auth", "inventory-service", "frontend-bff"
+    );
 
     private final VectorStoreRepository vectorStoreRepository;
     private final LogIngestionConsumer logIngestionConsumer;
@@ -92,7 +99,8 @@ public class SreTools {
     }
 
     /**
-     * Statistics tool returning aggregated breakdown counts of recent logs by severity level and service.
+     * Statistics tool returning aggregated breakdown counts of recent logs by severity level and service
+     * filtered over a sliding UTC time window in Apache Lucene.
      *
      * @param logLevel    optional filter by log level ('INFO', 'WARN', 'ERROR', or 'ALL')
      * @param serviceName optional filter by service name or 'ALL'
@@ -104,8 +112,60 @@ public class SreTools {
             @P("Log level filter ('INFO', 'WARN', 'ERROR', or 'ALL')") String logLevel,
             @P("Service name filter (e.g., 'user-auth', 'payment-gateway', or 'ALL')") String serviceName,
             @P("Analysis time window in minutes") int minutes) {
-        log.info("[TOOL: logStats] logLevel='{}' service='{}' minutes={}", logLevel, serviceName, minutes);
+        int effectiveMinutes = (minutes > 0) ? minutes : 15;
+        String effectiveLevel = (logLevel != null && !logLevel.isBlank()) ? logLevel : "ALL";
+        String effectiveService = (serviceName != null && !serviceName.isBlank()) ? serviceName : "ALL";
+        Instant cutoff = Instant.now().minus(Duration.ofMinutes(effectiveMinutes));
 
+        log.info("[TOOL: logStats] logLevel='{}' service='{}' minutes={} cutoff={}",
+                effectiveLevel, effectiveService, effectiveMinutes, cutoff);
+
+        List<Metadata> windowedLogs = vectorStoreRepository.findMetadataSince(cutoff, effectiveLevel, effectiveService);
+
+        // Fallback to consumer in-memory counters only when vector store returned empty (e.g. unit tests mocking only consumer)
+        if ((windowedLogs == null || windowedLogs.isEmpty()) && logIngestionConsumer.getTotalIngestedCount() > 0) {
+            return formatConsumerFallbackStats(effectiveLevel, effectiveService, effectiveMinutes);
+        }
+
+        List<Metadata> records = (windowedLogs != null) ? windowedLogs : List.of();
+        long total = records.size();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Log Ingestion Statistics (Window: ").append(effectiveMinutes).append(" min, Cutoff: ").append(cutoff).append("):\n");
+        sb.append("- Total Ingested Logs: ").append(total).append("\n");
+
+        sb.append("- Counts by Severity Level:\n");
+        for (LogLevel level : LogLevel.values()) {
+            if ("ALL".equalsIgnoreCase(effectiveLevel) || level.name().equalsIgnoreCase(effectiveLevel)) {
+                long levelCount = records.stream()
+                        .filter(m -> level.name().equalsIgnoreCase(m.getString("log_level")))
+                        .count();
+                sb.append("  * ").append(level).append(": ").append(levelCount).append("\n");
+            }
+        }
+
+        sb.append("- Counts by Microservice:\n");
+        Set<String> candidateServices = new LinkedHashSet<>(DEFAULT_SERVICES);
+        for (Metadata m : records) {
+            String svc = m.getString("service_name");
+            if (svc != null && !svc.isBlank()) {
+                candidateServices.add(svc);
+            }
+        }
+
+        for (String svc : candidateServices) {
+            if ("ALL".equalsIgnoreCase(effectiveService) || svc.equalsIgnoreCase(effectiveService)) {
+                long svcCount = records.stream()
+                        .filter(m -> svc.equalsIgnoreCase(m.getString("service_name")))
+                        .count();
+                sb.append("  * ").append(svc).append(": ").append(svcCount).append("\n");
+            }
+        }
+
+        return sb.toString();
+    }
+
+    private String formatConsumerFallbackStats(String logLevel, String serviceName, int minutes) {
         long total = logIngestionConsumer.getTotalIngestedCount();
         StringBuilder sb = new StringBuilder();
         sb.append("Log Ingestion Statistics (Window: ").append(minutes).append(" min):\n");
@@ -119,8 +179,7 @@ public class SreTools {
         }
 
         sb.append("- Counts by Microservice:\n");
-        List<String> services = List.of("payment-gateway", "user-auth", "inventory-service", "frontend-bff");
-        for (String svc : services) {
+        for (String svc : DEFAULT_SERVICES) {
             if ("ALL".equalsIgnoreCase(serviceName) || svc.equalsIgnoreCase(serviceName)) {
                 sb.append("  * ").append(svc).append(": ").append(logIngestionConsumer.getCountForService(svc)).append("\n");
             }

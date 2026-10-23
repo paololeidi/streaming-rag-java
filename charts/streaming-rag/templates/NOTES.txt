@@ -1,0 +1,21 @@
+Enterprise Streaming RAG in Java has been installed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+1. Wait for the Ollama model pull (Job ollama-init) and pods to become Ready:
+   kubectl get pods,jobs -n {{ .Release.Namespace }} -w
+
+2. Port-forward the Spring Boot API & MCP service:
+   kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "streaming-rag.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+3. Health check & Interactive Swagger UI:
+   curl http://localhost:{{ .Values.service.port }}/health
+   Open http://localhost:{{ .Values.service.port }}/swagger-ui.html
+
+4. Query:
+   curl -s -X POST http://localhost:{{ .Values.service.port }}/api/v1/query \
+     -H "Content-Type: application/json" \
+     -d '{"prompt": "what errors occurred recently?", "k": 5}'
+
+5. MCP SSE (Cursor / Claude Desktop):
+   http://localhost:{{ .Values.service.port }}/sse
+
+See charts/streaming-rag/README.md for Kind build/load steps.

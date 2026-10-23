@@ -1,10 +1,21 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Release.Name }}-config
+  name: {{ include "streaming-rag.fullname" . }}-config
+  labels:
+    {{- include "streaming-rag.labels" . | nindent 4 }}
 data:
   KAFKA_BOOTSTRAP_SERVERS: {{ .Values.config.kafkaBootstrapServers | quote }}
   APP_LUCENE_INDEX_PATH: {{ .Values.config.luceneIndexPath | quote }}
   APP_OLLAMA_BASE_URL: {{ .Values.config.ollamaBaseUrl | quote }}
+  APP_OLLAMA_MODEL_NAME: {{ .Values.ollama.model | default .Values.config.ollamaModel | quote }}
   APP_PRODUCER_ENABLED: {{ .Values.config.producerEnabled | quote }}
   APP_PRODUCER_FIXED_RATE_MS: {{ .Values.config.producerFixedRateMs | quote }}
+  MCP_SERVER_URL: {{ .Values.config.mcpServerUrl | quote }}
+  LANGCHAIN_ENDPOINT: {{ .Values.langsmith.endpoint | quote }}
+  LANGCHAIN_PROJECT: {{ .Values.langsmith.project | quote }}
+  {{- if .Values.langsmith.enabled }}
+  LANGCHAIN_TRACING_V2: {{ .Values.langsmith.tracing | quote }}
+  {{- else }}
+  LANGCHAIN_TRACING_V2: "false"
+  {{- end }}

@@ -1,6 +1,7 @@
 package com.streamingrag.vector;
 
 import com.streamingrag.model.SystemLog;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
@@ -11,10 +12,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 
 /**
- * Repository wrapping the LangChain4j LuceneEmbeddingStore for vector indexing and semantic retrieval.
+ * Repository wrapping the LangChain4j LuceneEmbeddingStore for vector indexing, semantic retrieval,
+ * and sliding time-window metadata aggregation.
  */
 @Repository
 public class VectorStoreRepository {
@@ -65,5 +69,21 @@ public class VectorStoreRepository {
                 .build();
         EmbeddingSearchResult<TextSegment> result = embeddingStore.search(request);
         return result.matches();
+    }
+
+    /**
+     * Retrieves log metadata entries stored since the specified UTC cutoff timestamp,
+     * optionally filtered by severity level and microservice name.
+     *
+     * @param cutoff      sliding UTC cutoff timestamp
+     * @param logLevel    optional log level filter ('INFO', 'WARN', 'ERROR', or 'ALL')
+     * @param serviceName optional microservice name filter or 'ALL'
+     * @return list of matching {@link Metadata} records
+     */
+    public List<Metadata> findMetadataSince(Instant cutoff, String logLevel, String serviceName) {
+        if (embeddingStore instanceof LuceneEmbeddingStore luceneStore) {
+            return luceneStore.findMetadataSince(cutoff, logLevel, serviceName);
+        }
+        return Collections.emptyList();
     }
 }

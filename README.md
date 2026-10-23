@@ -6,6 +6,7 @@
 [![Apache Lucene](https://img.shields.io/badge/Apache%20Lucene-9.12.0%20(Vectors)-darkblue.svg)](https://lucene.apache.org/)
 [![Kafka](https://img.shields.io/badge/Apache%20Kafka-KRaft-red.svg)](https://kafka.apache.org/)
 [![MCP](https://img.shields.io/badge/MCP-Protocol%202024--11--05-purple.svg)](https://modelcontextprotocol.io/)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0%20%2F%20Swagger-85EA2D.svg)](https://springdoc.org/)
 
 > 💡 **Sister Repository:** This is the Java version of the [`streaming-rag`](https://github.com/paololeidi/streaming-rag) project in Python.
 
@@ -17,9 +18,9 @@
 
 Unlike conventional RAG setups that depend on batch jobs or external standalone vector databases, this project implements a **complete end-to-end streaming intelligence pipeline natively inside the JVM**:
 - **Continuous Stream Ingestion**: Produces and consumes system log events across **Apache Kafka** partitions using `spring-kafka` with manual offset commits and enterprise-grade resilience.
-- **In-Process AI Vectorization & Search**: Converts streaming logs into dense semantic embeddings using ONNX Runtime (`all-MiniLM-L6-v2`) in-memory, immediately indexing them in an embedded **Apache Lucene 9** vector store (HNSW k-NN cosine similarity search). Zero Python sidecars, external containers, or external vector network hops required.
-- **Agentic RAG & Incident RCA**: An autonomous AI agent built with **LangChain4j** and local **Ollama** (`llama3.2:3b`) dynamically inspects vector store entries and ingestion metrics to correlate errors across microservices, discover root causes, and suggest mitigations.
-- **Modern Developer & Agent Interfaces**: Exposes synchronous REST endpoints, Server-Sent Events (SSE) token streaming, and a compliant **Model Context Protocol (MCP)** server for seamless integration with AI environments like Cursor IDE and Claude Desktop.
+- **In-Process AI Vectorization & Search**: Converts streaming logs into dense semantic embeddings using ONNX Runtime (`all-MiniLM-L6-v2`) in-memory, immediately indexing them in an embedded **Apache Lucene 9** vector store (HNSW k-NN cosine similarity search + `LongPoint` numeric range queries for sliding time-window analytics). Zero Python sidecars, external containers, or external vector network hops required.
+- **Agentic RAG & Incident RCA**: An autonomous AI agent built with **LangChain4j** and local **Ollama** (`llama3.2:3b`) dynamically inspects vector store entries and sliding-window ingestion metrics to correlate errors across microservices, discover root causes, and suggest mitigations.
+- **Modern Developer & Agent Interfaces**: Exposes synchronous REST endpoints, interactive **Swagger UI / OpenAPI 3.0** (`/swagger-ui.html`, `/v3/api-docs`), Server-Sent Events (SSE) token streaming, a compliant **Model Context Protocol (MCP)** server (`/sse`, `/messages`, `stdio`), dynamic external **MCP Client** tool discovery (`MCP_SERVER_URL`), and **LangSmith LLM Observability** (`LANGCHAIN_TRACING_V2`).
 
 ---
 
@@ -34,18 +35,18 @@ Unlike conventional RAG setups that depend on batch jobs or external standalone 
                                         │
 ┌──────────────────────────────── Agentic Layer ────────────────────────────────┐
 │                                                                               │
-│  POST /api/v1/query & /query/stream (SSE)                                     │
+│  POST /api/v1/query & /query/stream (SSE)  |  GET /swagger-ui.html            │
 │         │                                                                     │
 │         ▼                                                                     │
-│  LangChain4j @AiService (Ollama · llama3.2:3b)                                │
+│  LangChain4j @AiService (Ollama · llama3.2:3b + LlmObservabilityListener)     │
 │         ├─── @Tool vectorSearch ──► LuceneEmbeddingStore (k-NN Cosine)        │
-│         ├─── @Tool logStats    ──► Ingestion & Severity Distribution          │
-│         └─── [MCP Tools]       ──► External MCP Servers                       │
+│         ├─── @Tool logStats    ──► Lucene LongPoint Sliding-Window Stats      │
+│         └─── McpClientService  ──► External MCP Servers (MCP_SERVER_URL)      │
 └───────────────────────────────────────┬───────────────────────────────────────┘
                                         │
 ┌────────────────────────────────── MCP Server ─────────────────────────────────┐
 │  Model Context Protocol (JSON-RPC 2.0 / Protocol 2024-11-05)                  │
-│  Exposes vector_search & log_stats via SSE (Port 8080/8001) / stdio           │
+│  Exposes vector_search & log_stats via SSE (Port 8080/sse) / stdio            │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -57,7 +58,7 @@ In enterprise IT landscapes, core transactional and streaming backbones are pred
 
 1. **Native Kafka Ecosystem:** Apache Kafka was built on the JVM. `spring-kafka` provides first-class partition rebalancing, manual acknowledgment control, zero-copy serialization, and battle-tested fault tolerance without wrapper overhead.
 2. **High-Throughput Concurrency (Java 21 Virtual Threads / Project Loom):** Non-blocking stream processing and concurrent LLM token streaming scale across tens of thousands of lightweight virtual threads without Global Interpreter Lock (GIL) bottlenecks or single-threaded event loop complexity.
-3. **In-Process AI Vectorization & Storage (Zero Python Sidecar or External Vector DB):** Embeddings (`all-MiniLM-L6-v2`) execute directly in-process via JNI through the native ONNX Runtime, and vectors are indexed in-memory using **Apache Lucene 9 (k-NN HNSW)**. This matches the embedded ergonomics of Python ChromaDB without requiring external sidecars or HTTP serialization penalties.
+3. **In-Process AI Vectorization & Storage (Zero Python Sidecar or External Vector DB):** Embeddings (`all-MiniLM-L6-v2`) execute directly in-process via JNI through the native ONNX Runtime, and vectors are indexed in-memory using **Apache Lucene 9 (k-NN HNSW + BKD-tree `LongPoint`)**. This matches the embedded ergonomics of Python ChromaDB without requiring external sidecars or HTTP serialization penalties.
 4. **Enterprise Reality:** Demonstrates that modern agentic RAG and real-time AI workflows can be embedded natively into existing enterprise Java infrastructure without forcing organizations to re-platform to Python in production.
 
 ---
@@ -69,19 +70,28 @@ The easiest and fastest way to set up, launch, and verify the project is to let 
 Simply prompt your assistant:
 > *"Start the application following the agent guide"*
 
-The agent will ask you whether you prefer **Path A (Full Docker Compose - zero local setup)** or **Path B (Local Java 21 / Ollama hybrid development)**, and will then autonomously verify prerequisites, launch services, seed initial logs, execute health checks and test queries, and deliver working endpoints.
+The agent will ask you whether you prefer **Option A (Full stack in Docker - zero local setup)** or **Option B (Lean local dev - Kafka in Docker, Java 21 & Ollama native)**, and will then autonomously verify prerequisites, launch services, seed initial logs, execute health checks and test queries, and deliver working endpoints.
 
 ### Prerequisites
-Make sure the following tools are available on your system before startup:
-- **Docker & Docker Compose** (running daemon, required for containers / Kafka KRaft broker).
-- **Ollama** running with the model pulled: `ollama pull llama3.2:3b` (required for local LLM inference in hybrid mode).
-- **Java 21 LTS** & **Maven 3.9+** (or use the included `./mvnw` / `mvnw.cmd` wrapper; required only if choosing local hybrid development).
+
+What you need depends on the option you choose:
+
+| Requirement | Option A: Full stack in Docker | Option B: Lean local dev |
+|---|:---:|:---:|
+| **Docker + Docker Compose** (daemon running) | ✅ Required | ✅ Required (Kafka only) |
+| **Ollama** with `llama3.2:3b` pulled | ➖ Not needed (runs in a container; the model is pulled inside it) | ✅ Required (`ollama pull llama3.2:3b`) |
+| **Java 21 LTS** | ➖ Not needed (built inside the container) | ✅ Required |
+| **Maven 3.9+** | ➖ Not needed | ➖ Optional (use the included `./mvnw` / `mvnw.cmd` wrapper) |
+
+**Option A therefore needs only Docker with Compose**, plus **enough memory for the container engine:** the model, JVM, and Kafka run together, so allocate more than the 2 GB default some Docker/Podman VMs use (4 GB+ recommended).
+
+> **Podman users:** Podman works too, but `podman compose` requires a Compose provider (`docker-compose` or `podman-compose`) to be installed.
 
 ---
 
 ## 🛠️ Manual Setup Guide
 
-If you prefer to configure, build, and run the stack manually step-by-step (Docker Compose, individual services, Kafka KRaft, Kubernetes/Helm, or automated test suites):
+If you prefer to configure, build, and run the stack manually step-by-step (Docker Compose, individual services, Kafka KRaft, Kubernetes/Helm via `./scripts/kind-deploy.sh`, or automated test suites):
 
 👉 **[docs/run-and-test-guide.md](docs/run-and-test-guide.md)**
 
@@ -97,8 +107,10 @@ If you prefer to configure, build, and run the stack manually step-by-step (Dock
 | **Agentic Framework** | LangGraph (StateGraph ReAct) | LangChain4j (`@AiService` + `@Tool`) |
 | **Embeddings Execution** | SentenceTransformers (Python process) | **In-Process ONNX Runtime** (inside JVM) |
 | **Vector Store** | ChromaDB (In-Process / Embedded in Python) | **Apache Lucene 9 (In-Process / Embedded in Java)** |
-| **MCP Integration** | FastMCP Python server | Spring SSE & Stdio JSON-RPC 2.0 MCP Server |
-| **Packaging & Deploy** | Docker Compose / Helm / Kind | Multi-Stage Dockerfile / Compose / Helm |
+| **API Docs & Playground** | FastAPI OpenAPI (`/docs`) | **Springdoc OpenAPI 3.0 (`/swagger-ui.html`, `/v3/api-docs`)** |
+| **MCP Integration** | FastMCP Server + `MultiServerMCPClient` | **Spring MCP Server (`/sse` & `stdio`) + Dynamic `McpClientService`** |
+| **Observability** | LangSmith (`LANGCHAIN_TRACING_V2`) | **LangChain4j `LlmObservabilityListener` + LangSmith `/runs`** |
+| **Packaging & Deploy** | Docker Compose / Helm / `kind-deploy.sh` | **Multi-Stage Dockerfile / Compose / Full Helm Chart / `kind-deploy.sh`** |
 
 ---
 
@@ -111,9 +123,11 @@ All execution instructions, technical specifications, and architectural details 
 | [docs/technical-guide.md](docs/technical-guide.md) | **Comprehensive system architecture & technical implementation guide** |
 | [docs/run-and-test-guide.md](docs/run-and-test-guide.md) | **Step-by-step build, run, and testing playbook** |
 | [AGENT_GUIDE.md](AGENT_GUIDE.md) | **AI Agent & Coding Assistant Runbook (Automated onboarding & testing)** |
-| [docs/architecture-decisions.md](docs/architecture-decisions.md) | Architecture Decision Records (ADRs) |
+| [docs/architecture-decisions.md](docs/architecture-decisions.md) | Architecture Decision Records (ADRs 01–14) |
 | [docs/data-contract.md](docs/data-contract.md) | Java 21 Record schema & serialization data contract |
 | [docs/improvements.md](docs/improvements.md) | Production improvements & enterprise backlog |
+| [docs/reliability-remediation-plan.md](docs/reliability-remediation-plan.md) | Reliability & correctness remediation plan |
+| [charts/streaming-rag/README.md](charts/streaming-rag/README.md) | Kubernetes & Kind Helm Chart deployment guide |
 
 ---
 

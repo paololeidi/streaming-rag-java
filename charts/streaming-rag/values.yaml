@@ -1,40 +1,89 @@
-replicaCount: 2
+# Default values for streaming-rag-java (Kind / laptop-friendly).
+# Full stack (Kind + Ollama + Kafka + Java 21 with in-process ONNX & Lucene) wants ~8-16 GB host RAM.
+
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
 
 image:
   repository: streaming-rag-java
+  tag: local
   pullPolicy: IfNotPresent
-  tag: "1.0.0"
 
 service:
   type: ClusterIP
   port: 8080
+  nodePort: null
 
 config:
-  kafkaBootstrapServers: "kafka:9092"
+  kafkaBootstrapServers: "kafka:29092"
   luceneIndexPath: "/app/data/lucene-index"
   ollamaBaseUrl: "http://ollama:11434"
   ollamaModel: "llama3.2:3b"
   producerEnabled: true
   producerFixedRateMs: 1000
+  mcpServerUrl: ""
+
+kafka:
+  enabled: true
+  image: apache/kafka:3.7.0
+  clusterId: MkU3OEVBNTcwNTJENDM2Qk
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+ollama:
+  enabled: true
+  image: ollama/ollama:latest
+  model: llama3.2:3b
+  keepAlive: 30m
+  persistence:
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+persistence:
+  enabled: true
+  size: 5Gi
 
 resources:
-  limits:
-    cpu: 2000m
-    memory: 2048Mi
   requests:
     cpu: 500m
     memory: 1024Mi
+  limits:
+    cpu: 2000m
+    memory: 2048Mi
 
 livenessProbe:
   httpGet:
     path: /health
     port: 8080
-  initialDelaySeconds: 30
-  periodSeconds: 10
+  initialDelaySeconds: 45
+  periodSeconds: 15
 
 readinessProbe:
   httpGet:
     path: /health
     port: 8080
-  initialDelaySeconds: 15
-  periodSeconds: 5
+  initialDelaySeconds: 20
+  periodSeconds: 10
+
+langsmith:
+  enabled: false
+  tracing: "true"
+  endpoint: "https://api.smith.langchain.com"
+  project: "streaming-rag-java"
+  # Set via --set-string langsmith.apiKey=... or existing Secret
+  apiKey: ""
+  existingSecret: ""
+  existingSecretKey: LANGCHAIN_API_KEY

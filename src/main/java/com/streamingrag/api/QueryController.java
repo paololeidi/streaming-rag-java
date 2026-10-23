@@ -6,6 +6,9 @@ import com.streamingrag.api.dto.LogSource;
 import com.streamingrag.api.dto.QueryRequest;
 import com.streamingrag.api.dto.QueryResponse;
 import dev.langchain4j.service.TokenStream;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +29,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1/query")
+@Tag(name = "Agentic RAG Query", description = "Autonomous SRE root-cause analysis endpoints with semantic retrieval and citations")
 public class QueryController {
 
     private static final Logger log = LoggerFactory.getLogger(QueryController.class);
@@ -44,6 +48,14 @@ public class QueryController {
      * Executes the agent ReAct loop with tool calling and returns answer with structured citations.
      */
     @PostMapping
+    @Operation(
+            summary = "Execute synchronous Agentic RAG incident query",
+            description = "Runs the LangChain4j ReAct agent loop over Apache Lucene vector store and returns the synthesized RCA report with structured log citations.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Successfully generated incident analysis with citations"),
+                    @ApiResponse(responseCode = "400", description = "Invalid query request payload")
+            }
+    )
     public ResponseEntity<QueryResponse> query(@Valid @RequestBody QueryRequest request) {
         log.info("[API: /api/v1/query] Received query prompt='{}' k={}", request.prompt(), request.getEffectiveK());
 
@@ -63,6 +75,10 @@ public class QueryController {
      * Streams LLM tokens as they are generated and terminates with a '[DONE]' event.
      */
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(
+            summary = "Stream Agentic RAG incident response via Server-Sent Events (SSE)",
+            description = "Executes the SRE agent on a Java 21 Virtual Thread and streams generated tokens in real time, ending with a '[DONE]' event."
+    )
     public SseEmitter streamQuery(@Valid @RequestBody QueryRequest request) {
         log.info("[API: /api/v1/query/stream] Starting SSE stream for prompt='{}'", request.prompt());
 

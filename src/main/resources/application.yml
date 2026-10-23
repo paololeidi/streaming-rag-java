@@ -18,6 +18,14 @@ spring:
       auto-offset-reset: earliest
       enable-auto-commit: false
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+
 app:
   kafka:
     topic: system-logs
@@ -38,6 +46,14 @@ app:
     model-name: ${APP_OLLAMA_MODEL_NAME:llama3.2:3b}
     temperature: 0.0
     timeout-seconds: ${APP_OLLAMA_TIMEOUT_SECONDS:240}
+  mcp:
+    server-url: ${MCP_SERVER_URL:}
+    timeout-seconds: ${MCP_TIMEOUT_SECONDS:10}
+  tracing:
+    enabled: ${LANGCHAIN_TRACING_V2:false}
+    endpoint: ${LANGCHAIN_ENDPOINT:https://api.smith.langchain.com}
+    api-key: ${LANGCHAIN_API_KEY:}
+    project: ${LANGCHAIN_PROJECT:streaming-rag-java}
 
 logging:
   level:

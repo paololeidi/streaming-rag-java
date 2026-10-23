@@ -3,7 +3,9 @@ package com.streamingrag.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.streamingrag.agent.SreAnalystAgent;
 import com.streamingrag.agent.SreTools;
+import com.streamingrag.mcp.McpClientService;
 import com.streamingrag.vector.LuceneEmbeddingStore;
+import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
@@ -12,12 +14,14 @@ import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2Embedding
 import dev.langchain4j.model.ollama.OllamaChatModel;
 import dev.langchain4j.model.ollama.OllamaStreamingChatModel;
 import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.tool.ToolExecutor;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,11 +30,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Enterprise LangChain4j configuration.
  * Configures the in-process ONNX embedding model, embedded Apache Lucene vector store,
- * Ollama Chat & Streaming models, and the declarative SreAnalystAgent AiService.
+ * Ollama Chat & Streaming models with observability listeners, and the declarative SreAnalystAgent AiService
+ * with dynamic external MCP tool integration.
  */
 @Configuration
 public class LangChainConfig {
@@ -75,46 +82,63 @@ public class LangChainConfig {
     }
 
     /**
-     * Ollama LLM client for synchronous reasoning and tool calling.
+     * Ollama LLM client for synchronous reasoning and tool calling, instrumented with {@link LlmObservabilityListener}.
      */
     @Bean
     @ConditionalOnMissingBean(ChatLanguageModel.class)
-    public ChatLanguageModel chatLanguageModel() {
-        return OllamaChatModel.builder()
+    public ChatLanguageModel chatLanguageModel(
+            @Autowired(required = false) LlmObservabilityListener observabilityListener) {
+        OllamaChatModel.OllamaChatModelBuilder builder = OllamaChatModel.builder()
                 .baseUrl(appProperties.ollama().baseUrl())
                 .modelName(appProperties.ollama().modelName())
                 .temperature(appProperties.ollama().temperature())
-                .timeout(Duration.ofSeconds(appProperties.ollama().timeoutSeconds()))
-                .build();
+                .timeout(Duration.ofSeconds(appProperties.ollama().timeoutSeconds()));
+        if (observabilityListener != null) {
+            builder.listeners(List.of(observabilityListener));
+        }
+        return builder.build();
     }
 
     /**
-     * Ollama streaming client for token-by-token SSE streaming.
+     * Ollama streaming client for token-by-token SSE streaming, instrumented with {@link LlmObservabilityListener}.
      */
     @Bean
     @ConditionalOnMissingBean(StreamingChatLanguageModel.class)
-    public StreamingChatLanguageModel streamingChatLanguageModel() {
-        return OllamaStreamingChatModel.builder()
+    public StreamingChatLanguageModel streamingChatLanguageModel(
+            @Autowired(required = false) LlmObservabilityListener observabilityListener) {
+        OllamaStreamingChatModel.OllamaStreamingChatModelBuilder builder = OllamaStreamingChatModel.builder()
                 .baseUrl(appProperties.ollama().baseUrl())
                 .modelName(appProperties.ollama().modelName())
                 .temperature(appProperties.ollama().temperature())
-                .timeout(Duration.ofSeconds(appProperties.ollama().timeoutSeconds()))
-                .build();
+                .timeout(Duration.ofSeconds(appProperties.ollama().timeoutSeconds()));
+        if (observabilityListener != null) {
+            builder.listeners(List.of(observabilityListener));
+        }
+        return builder.build();
     }
 
     /**
-     * Declarative AiService factory weaving LLM, tools, and system prompt.
+     * Declarative AiService factory weaving LLM, native SreTools, dynamic external MCP tools, and system prompt.
      */
     @Bean
     @ConditionalOnMissingBean(SreAnalystAgent.class)
     public SreAnalystAgent sreAnalystAgent(
             ChatLanguageModel chatLanguageModel,
             StreamingChatLanguageModel streamingChatLanguageModel,
-            SreTools sreTools) {
-        return AiServices.builder(SreAnalystAgent.class)
+            SreTools sreTools,
+            @Autowired(required = false) McpClientService mcpClientService) {
+        AiServices<SreAnalystAgent> builder = AiServices.builder(SreAnalystAgent.class)
                 .chatLanguageModel(chatLanguageModel)
-                .streamingChatLanguageModel(streamingChatLanguageModel)
-                .tools(sreTools)
-                .build();
+                .streamingChatLanguageModel(streamingChatLanguageModel);
+
+        if (mcpClientService != null && mcpClientService.isConfigured()) {
+            Map<ToolSpecification, ToolExecutor> combinedTools = mcpClientService.buildCombinedToolMap(sreTools);
+            log.info("[LANGCHAIN] Wiring SreAnalystAgent with {} combined native + external MCP tools", combinedTools.size());
+            builder.tools(combinedTools);
+        } else {
+            builder.tools(sreTools);
+        }
+
+        return builder.build();
     }
 }

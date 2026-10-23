@@ -2,10 +2,12 @@
 
 This comprehensive guide walks you through interacting with and verifying every layer of the **Enterprise Streaming RAG in Java** architecture:
 - **Event-Driven Log Ingestion:** Datafaker -> Apache Kafka -> In-process ONNX Embedding -> Embedded Apache Lucene.
-- **Embedded Vector Database:** Native JVM-level dense vector indexing and cosine k-NN similarity search powered by Apache Lucene (zero external vector database container!).
+- **Embedded Vector Database & Sliding-Window Analytics:** Native JVM-level dense vector indexing (`KnnFloatVectorField` HNSW cosine similarity) and sliding UTC time-window range queries (`LongPoint` `timestamp_ms`) powered by Apache Lucene.
+- **Interactive OpenAPI / Swagger UI:** Browser API playground at `/swagger-ui.html` and OpenAPI 3.0 spec at `/v3/api-docs`.
 - **Agentic REST API:** Synchronous incident investigation with citations (`POST /api/v1/query`).
 - **Real-Time Token Streaming:** Server-Sent Events (SSE) streaming (`POST /api/v1/query/stream`).
-- **Model Context Protocol (MCP):** Live JSON-RPC 2.0 tool execution (`vector_search`, `log_stats`) for Cursor IDE and Claude Desktop.
+- **Model Context Protocol (MCP) Server & Client:** Live JSON-RPC 2.0 tool execution (`vector_search`, `log_stats`) for Cursor IDE and Claude Desktop (`/sse`, `/messages`), plus dynamic external MCP tool discovery via `MCP_SERVER_URL`.
+- **Cloud-Native Kubernetes (Kind & Helm) & LangSmith Observability:** Single-command Kind cluster deployment (`./scripts/kind-deploy.sh`) and LLM tracing (`LANGCHAIN_TRACING_V2=true`).
 
 ---
 
@@ -13,27 +15,30 @@ This comprehensive guide walks you through interacting with and verifying every 
 1. [Prerequisites & Deployment Modes](#1-prerequisites--deployment-modes)
    - [Option A: Full Self-Contained Stack in Docker (Evaluators & Recruiters)](#option-a-full-self-contained-stack-in-docker-evaluators--recruiters)
    - [Option B: Lean Local Dev Mode (Recommended for Laptops & Daily Dev)](#option-b-lean-local-dev-mode-recommended-for-laptops--daily-dev)
-2. [Step 1: Healthcheck & Liveness Verification](#step-1-healthcheck--liveness-verification)
+   - [Option C: Kubernetes (Kind + Helm 3)](#option-c-kubernetes-kind--helm-3)
+2. [Step 1: Healthcheck & Interactive Swagger UI](#step-1-healthcheck--interactive-swagger-ui)
 3. [Step 2: Monitoring Log Ingestion & In-Process Vectorization](#step-2-monitoring-log-ingestion--in-process-vectorization)
 4. [Step 3: Interacting with the SRE Analyst Agent (REST API)](#step-3-interacting-with-the-sre-analyst-agent-rest-api)
 5. [Step 4: Real-Time Token-by-Token SSE Streaming](#step-4-real-time-token-by-token-sse-streaming)
 6. [Step 5: Querying via Model Context Protocol (MCP)](#step-5-querying-via-model-context-protocol-mcp)
-7. [Step 6: Cursor IDE & Claude Desktop Integration](#step-6-cursor-ide--claude-desktop-integration)
-8. [Step 7: Automated Test Suite Verification](#step-7-automated-test-suite-verification)
+7. [Step 6: Cursor IDE, Claude Desktop & External MCP Client Integration](#step-6-cursor-ide-claude-desktop--external-mcp-client-integration)
+8. [Step 7: LLM Observability & LangSmith Tracing](#step-7-llm-observability--langsmith-tracing)
+9. [Step 8: Automated Test Suite Verification](#step-8-automated-test-suite-verification)
 
 ---
 
 ## 1. Prerequisites & Deployment Modes
 
-The repository provides **two streamlined deployment options**, mirroring the battle-tested setup of the Python sister project ([`streaming-rag`](https://github.com/paololeidi/streaming-rag)):
+The repository provides **streamlined deployment options**, mirroring the battle-tested setup of the Python sister project ([`streaming-rag`](https://github.com/paololeidi/streaming-rag)):
 
-| Deployment Mode | Who it's for | What runs in Docker | What runs on Host (Native OS) | Total Memory Footprint |
+| Deployment Mode | Who it's for | What runs in Docker / K8s | What runs on Host (Native OS) | Total Memory Footprint |
 | :--- | :--- | :--- | :--- | :--- |
 | **Option A: Full Stack** | **Recruiters, Evaluators, CI/CD** | Kafka + Ollama + Java App (Embedded Lucene) | *Nothing* (100% Hermetic) | ~5–6 GB (requires 16GB+ RAM) |
 | **Option B: Lean Local Dev** | **Personal Laptops & Daily Dev** *(Recommended!)* | **Kafka only** (`docker-compose.infra.yml`) | **Java App (Embedded Lucene) + Native Ollama** | **< 150 MB in Docker, ~3 GB Host** |
+| **Option C: Kind + Helm** | **Kubernetes & Cloud-Native Validation** | Kind Cluster (Kafka + Ollama + Java App) | `kubectl` + `helm` | ~6–8 GB |
 
 > 💡 **Why Apache Lucene replaces ChromaDB:**  
-> In Python projects, ChromaDB can run embedded in-process. However, in Java, ChromaDB required running a separate, heavy external container over HTTP. By replacing ChromaDB with **Apache Lucene 9 (HNSW k-NN vector search)**, the vector database now runs **100% in-process within the JVM**. This completely eliminates the ChromaDB container, frees up substantial RAM and CPU, and removes external network hops for vector indexing and queries!
+> In Python projects, ChromaDB can run embedded in-process. However, in Java, ChromaDB required running a separate, heavy external container over HTTP. By replacing ChromaDB with **Apache Lucene 9 (HNSW k-NN vector search + BKD-tree `LongPoint`)**, the vector database now runs **100% in-process within the JVM**. This completely eliminates the ChromaDB container, frees up substantial RAM and CPU, and removes external network hops for vector indexing and queries!
 
 ---
 
@@ -64,15 +69,6 @@ docker exec -it streaming-rag-ollama ollama pull llama3.2:3b
 > 🚀 **Recommended for Personal Laptops (e.g. 8–16 GB RAM with integrated GPUs like Intel Iris Xe):**  
 > Matches the leanest development setup possible, eliminating WSL2 memory exhaustion and disk swap thrashing.
 
-#### Why this mode is optimal for development:
-When running heavy containers inside Docker Desktop on Windows, WSL2 (`vmmem`) can hit memory thresholds and trigger disk swap thrashing against the SSD.
-
-**The Solution:**
-1. **Docker runs ONLY the ultra-lightweight infrastructure** (Apache Kafka in KRaft mode) via `docker-compose.infra.yml`. It consumes **under 150 MB of RAM** and **0% disk swap**.
-2. **Vector Database runs natively embedded in the JVM** via Apache Lucene with zero external containers or HTTP latency.
-3. **Ollama runs native on the Host OS**, utilizing your machine's CPU and GPU acceleration directly.
-4. **Spring Boot runs native on the Host OS** (via IntelliJ IDEA or `mvn spring-boot:run`), enabling instant hot-reloading, step-through debugging, and zero Docker build waiting times.
-
 #### Step 1: Stop any existing Docker containers
 ```bash
 docker compose down
@@ -96,16 +92,35 @@ ollama run llama3.2:3b "say ready in one word"
 
 #### Step 4: Launch Spring Boot Natively on Host
 ```powershell
-$env:JAVA_HOME = "C:\Users\Utente\.jdks\ms-21.0.12.1"
+# Set JAVA_HOME to your local JDK 21 installation if not already on PATH
+# $env:JAVA_HOME = "C:\path\to\jdk-21"
 mvn spring-boot:run
 ```
 *(All defaults in `application.yml` already point to `localhost:9092` for Kafka, embedded `./data/lucene-index` for Apache Lucene, and `localhost:11434` for Ollama!)*
 
 ---
 
-## Step 1: Healthcheck & Liveness Verification
+### Option C: Kubernetes (Kind + Helm 3)
 
-Verify that the Spring Boot application is healthy.
+Deploy the entire stack (Kafka KRaft, Ollama with `ollama-init` model pull Job, and the Spring Boot application with PVC-backed Lucene storage) to a local Kind Kubernetes cluster:
+
+```bash
+./scripts/kind-deploy.sh
+```
+
+Or manually with Helm:
+```bash
+helm lint ./charts/streaming-rag
+helm upgrade --install streaming-rag ./charts/streaming-rag -n streaming-rag --create-namespace
+kubectl port-forward -n streaming-rag svc/streaming-rag 8080:8080
+```
+See [`charts/streaming-rag/README.md`](../charts/streaming-rag/README.md) for full Helm configuration values.
+
+---
+
+## Step 1: Healthcheck & Interactive Swagger UI
+
+Verify that the Spring Boot application is healthy and explore the interactive OpenAPI documentation.
 
 ### cURL
 ```bash
@@ -123,6 +138,10 @@ Invoke-RestMethod -Uri "http://localhost:8080/health" -Method Get
   "status": "ok"
 }
 ```
+
+### Interactive OpenAPI / Swagger UI
+- **Swagger UI Playground:** Open [`http://localhost:8080/swagger-ui.html`](http://localhost:8080/swagger-ui.html) in your browser.
+- **OpenAPI 3.0 JSON Specification:** [`http://localhost:8080/v3/api-docs`](http://localhost:8080/v3/api-docs)
 
 ---
 
@@ -143,7 +162,7 @@ Inspect real-time log ingestion (in terminal or Docker):
 **Key Architectural Guarantees Observed:**
 1. **Partition-Level Ordering:** Events are keyed by `serviceName`, guaranteeing sequential processing per microservice.
 2. **In-Process ONNX Embeddings:** All-MiniLM-L6-v2 runs directly inside the JVM, producing 384-dimensional dense vectors with **zero network hops** to Python.
-3. **In-Process Apache Lucene Vector Indexing:** Embeddings and metadata are indexed natively into Lucene's HNSW vector index in real time.
+3. **In-Process Apache Lucene Vector & Timestamp Indexing:** Embeddings (`KnnFloatVectorField`) and epoch timestamps (`LongPoint` `timestamp_ms`) are indexed natively into Lucene in real time.
 4. **At-Least-Once Delivery:** Kafka offsets are acknowledged (`AckMode.MANUAL_IMMEDIATE`) **only after** successful persistence in Apache Lucene.
 
 ---
@@ -153,7 +172,7 @@ Inspect real-time log ingestion (in terminal or Docker):
 Send an incident investigation query to the SRE Analyst Agent. The agent executes an autonomous ReAct loop:
 1. Identifies the issue and invokes `vectorSearch` over Apache Lucene.
 2. Retrieves and analyzes relevant log excerpts.
-3. Optionally calls `logStats` to evaluate blast radius and error distributions.
+3. Calls `logStats` (backed by Lucene `LongPoint` sliding time-window range queries) to evaluate blast radius and error distributions.
 4. Synthesizes a structured incident report citing exact log sources.
 
 ### cURL
@@ -278,7 +297,7 @@ curl -X POST http://localhost:8080/messages \
     "params": {}
   }'
 ```
-Returns definitions and JSON schemas for `vector_search` (backed by Apache Lucene) and `log_stats`.
+Returns definitions and JSON schemas for `vector_search` (backed by Apache Lucene) and `log_stats` (sliding time-window statistics).
 
 ### 5.3 Execute `vector_search` Tool via MCP
 ```bash
@@ -319,11 +338,9 @@ curl -X POST http://localhost:8080/messages \
 
 ---
 
-## Step 6: Cursor IDE & Claude Desktop Integration
+## Step 6: Cursor IDE, Claude Desktop & External MCP Client Integration
 
-Connect Cursor IDE or Claude Desktop directly to the live streaming log store without writing code:
-
-### Cursor IDE Setup
+### Cursor IDE Setup (Embedded MCP Server)
 1. In Cursor, open **Settings** (`Ctrl + ,` or `Cmd + ,`).
 2. Select **Features** -> **MCP Servers**.
 3. Click **Add New MCP Server**:
@@ -345,13 +362,37 @@ In your Claude Desktop configuration file (`%APPDATA%\Claude\claude_desktop_conf
   }
 }
 ```
-Restart Claude Desktop to start diagnosing live logs directly inside the chat interface.
+
+### Connecting `SreAnalystAgent` to External MCP Servers (`MCP_SERVER_URL`)
+To have the Java `SreAnalystAgent` dynamically discover and invoke tools from an external MCP server (via `McpClientService`), set `MCP_SERVER_URL`:
+```bash
+export MCP_SERVER_URL=http://localhost:8001/sse
+mvn spring-boot:run
+```
+If the external MCP server is unconfigured or unreachable, the agent logs a warning and gracefully falls back to native `SreTools`.
 
 ---
 
-## Step 7: Automated Test Suite Verification
+## Step 7: LLM Observability & LangSmith Tracing
 
-Run the full automated test suite (covering unit logic, in-process ONNX embeddings, embedded Apache Lucene vector indexing, REST controllers, Testcontainers Kafka integration, and MCP protocol):
+Every Ollama request and response is instrumented by `LlmObservabilityListener` (`ChatModelListener`), logging structured telemetry:
+```text
+[LLM TRACE: REQUEST] runId=... model=llama3.2:3b messages=2 tools=2
+[LLM TRACE: RESPONSE] runId=... model=llama3.2:3b latencyMs=1420 inputTokens=185 outputTokens=64 totalTokens=249 toolCalls=1
+```
+
+To enable asynchronous trace export to **LangSmith**, set the standard environment variables:
+```bash
+export LANGCHAIN_TRACING_V2=true
+export LANGCHAIN_API_KEY=lsv2_pt_...
+export LANGCHAIN_PROJECT=streaming-rag-java
+```
+
+---
+
+## Step 8: Automated Test Suite Verification
+
+Run the full automated test suite (covering unit logic, in-process ONNX embeddings, embedded Apache Lucene vector & range indexing, OpenAPI configuration, REST controllers, dynamic MCP client & server protocol, LLM observability listener, and Testcontainers Kafka integration):
 
 ```bash
 mvn clean test

@@ -22,6 +22,7 @@
         <datafaker.version>2.4.0</datafaker.version>
         <langchain4j.version>0.35.0</langchain4j.version>
         <lucene.version>9.12.0</lucene.version>
+        <springdoc.version>2.6.0</springdoc.version>
         <testcontainers.version>1.20.2</testcontainers.version>
     </properties>
 
@@ -39,6 +40,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- OpenAPI / Swagger UI -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
         </dependency>
 
         <!-- Spring Kafka -->

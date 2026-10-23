@@ -14,6 +14,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -70,6 +72,53 @@ class LuceneEmbeddingStoreTest {
         assertThat(matches.get(0).embedded().text()).isEqualTo("Database connection timeout");
         assertThat(matches.get(0).embedded().metadata().getString("service")).isEqualTo("db-service");
         assertThat(matches.get(0).score()).isGreaterThan(0.9);
+    }
+
+    @Test
+    @DisplayName("Should filter metadata by sliding UTC time window, log level, and service name")
+    void shouldFilterMetadataBySlidingTimeWindow() {
+        Instant now = Instant.now();
+        Embedding emb = Embedding.from(new float[]{1.0f, 0.0f});
+
+        // Recent ERROR in payment-gateway (5 minutes ago)
+        TextSegment recentError = TextSegment.from("Recent error", Metadata.from(Map.of(
+                "service_name", "payment-gateway",
+                "log_level", "ERROR",
+                "timestamp", now.minus(Duration.ofMinutes(5)).toString()
+        )));
+
+        // Recent WARN in user-auth (10 minutes ago)
+        TextSegment recentWarn = TextSegment.from("Recent warn", Metadata.from(Map.of(
+                "service_name", "user-auth",
+                "log_level", "WARN",
+                "timestamp", now.minus(Duration.ofMinutes(10)).toString()
+        )));
+
+        // Old ERROR in payment-gateway (45 minutes ago)
+        TextSegment oldError = TextSegment.from("Old error", Metadata.from(Map.of(
+                "service_name", "payment-gateway",
+                "log_level", "ERROR",
+                "timestamp", now.minus(Duration.ofMinutes(45)).toString()
+        )));
+
+        store.add(emb, recentError);
+        store.add(emb, recentWarn);
+        store.add(emb, oldError);
+
+        // 15-minute window: should return only the 2 recent entries
+        Instant cutoff15m = now.minus(Duration.ofMinutes(15));
+        List<Metadata> recentAll = store.findMetadataSince(cutoff15m, "ALL", "ALL");
+        assertThat(recentAll).hasSize(2);
+
+        // 15-minute window + ERROR filter: should return only recentError
+        List<Metadata> recentErrorsOnly = store.findMetadataSince(cutoff15m, "ERROR", "ALL");
+        assertThat(recentErrorsOnly).hasSize(1);
+        assertThat(recentErrorsOnly.get(0).getString("service_name")).isEqualTo("payment-gateway");
+
+        // 60-minute window + payment-gateway filter: should return both recentError and oldError
+        Instant cutoff60m = now.minus(Duration.ofMinutes(60));
+        List<Metadata> payment60m = store.findMetadataSince(cutoff60m, "ALL", "payment-gateway");
+        assertThat(payment60m).hasSize(2);
     }
 
     @Test

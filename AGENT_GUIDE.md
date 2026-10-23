@@ -19,7 +19,7 @@ When a user asks to run, test, inspect, or troubleshoot the **Enterprise Streami
     - Always run them in detached/background mode (e.g., `docker compose up -d` or managed background terminal tasks) so the agent turn is never blocked.
 3. **OS-Aware Execution (Windows vs. Unix)**:
     - On Windows PowerShell:
-        - Verify/Set `JAVA_HOME` if needed (e.g., `$env:JAVA_HOME = "C:\Users\Utente\.jdks\ms-21.0.12.1"` or check with `java -version` and `mvn -version`).
+        - Verify/Set `JAVA_HOME` if needed (e.g., `$env:JAVA_HOME = "C:\path\to\jdk-21"` or check with `java -version` and `mvn -version`).
         - Run Maven commands with `mvn` or `.\mvnw.cmd`.
         - When using `curl`, be aware that PowerShell aliases `curl` to `Invoke-WebRequest` unless calling `curl.exe` or using `Invoke-RestMethod`.
     - On POSIX (Linux / macOS / Git Bash):
@@ -51,13 +51,13 @@ When a user asks to run, test, inspect, or troubleshoot the **Enterprise Streami
                                          │
  ┌──────────────────────────────── Agentic Layer ────────────────────────────────┐
  │                                                                               │
- │  POST /api/v1/query & /api/v1/query/stream (SSE)                              │
+ │  POST /api/v1/query & /api/v1/query/stream (SSE)  |  GET /swagger-ui.html     │
  │         │                                                                     │
  │         ▼                                                                     │
- │  LangChain4j @AiService (Ollama · llama3.2:3b)                                │
+ │  LangChain4j @AiService (Ollama · llama3.2:3b + LlmObservabilityListener)     │
  │         ├── @Tool vectorSearch ──► LuceneEmbeddingStore (k-NN Cosine)         │
- │         ├── @Tool logStats    ──► Ingestion & Severity Distribution           │
- │         └── [MCP Tools]       ──► External MCP Clients                        │
+ │         ├── @Tool logStats    ──► Lucene LongPoint Sliding-Window Stats       │
+ │         └── McpClientService  ──► External MCP Servers (MCP_SERVER_URL)       │
  └───────────────────────────────────────┬───────────────────────────────────────┘
                                          │
  ┌─────────────────────────────────── MCP Server ────────────────────────────────┐
@@ -71,10 +71,10 @@ When a user asks to run, test, inspect, or troubleshoot the **Enterprise Streami
 
 | Service | Port | Protocol | Purpose |
 |---|---|---|---|
-| **Spring Boot Application** | `8080` | HTTP / SSE | REST API (`/api/v1/query`), Stream (`/api/v1/query/stream`), Health (`/health`), MCP SSE (`/sse`), MCP Messages (`/messages`) |
+| **Spring Boot Application** | `8080` | HTTP / SSE | REST API (`/api/v1/query`), Stream (`/api/v1/query/stream`), Swagger UI (`/swagger-ui.html`, `/v3/api-docs`), Health (`/health`), MCP SSE (`/sse`), MCP Messages (`/messages`) |
 | **Kafka Broker** | `9092` (host) / `29092` (Docker) | TCP (KRaft) | Event-driven log streaming pipeline (topic: `system-logs`) |
 | **Ollama Runtime** | `11434` | HTTP | Local LLM inference engine (`llama3.2:3b`) |
-| **Apache Lucene 9** | In-Process (Embedded JVM) | File / RAM | High-speed dense vector store (`./data/lucene-index`), zero external container |
+| **Apache Lucene 9** | In-Process (Embedded JVM) | File / RAM | High-speed dense vector store (`./data/lucene-index`) + `LongPoint` sliding time-window range index, zero external container |
 | **Mock Producer & Consumer** | In-Process (Embedded JVM) | Spring Beans | Continuous synthetic log generation and Kafka vectorization consumer |
 
 ---
@@ -142,7 +142,7 @@ As soon as `/health` returns `ok` and log ingestion is confirmed:
    > *"Testing `/api/v1/query`. Please note that this may take 30–90 seconds while Ollama loads the model weights into RAM and the LangChain4j ReAct agent runs its reasoning loop."*
 2. **Execute Test Query**: Run a verification query against `POST /api/v1/query` and verify a valid JSON answer with citations is returned.
 3. **Deliver Status Report**: Compile and deliver the structured **Final Setup Status Report** (Section 6).
-4. **Offer Interactive Testing**: Suggest trying the streaming endpoint (`/api/v1/query/stream`) or testing MCP tools.
+4. **Offer Interactive Testing**: Suggest opening `/swagger-ui.html`, trying the streaming endpoint (`/api/v1/query/stream`), or testing MCP tools.
 
 ### Step A.6: Teardown
 When the user finishes testing:
@@ -171,7 +171,7 @@ Ensure the host has:
 
 On Windows PowerShell, set `JAVA_HOME` if needed:
 ```powershell
-$env:JAVA_HOME = "C:\Users\Utente\.jdks\ms-21.0.12.1"
+$env:JAVA_HOME = "C:\path\to\jdk-21"
 ```
 
 ### Step B.2: Stop Any Existing Heavy Docker Containers
@@ -203,7 +203,7 @@ ollama run llama3.2:3b "say ready in one word"
 Run the application using Maven:
 ```powershell
 # Windows PowerShell
-$env:JAVA_HOME = "C:\Users\Utente\.jdks\ms-21.0.12.1"
+$env:JAVA_HOME = "C:\path\to\jdk-21"
 mvn spring-boot:run
 ```
 ```bash
@@ -245,6 +245,7 @@ Whenever the agent sets up the environment (Option A or Option B), it must:
 | Component | Status | Port / Target | Health / Access URL |
 |---|---|---|---|
 | **Spring Boot Backend** | 🟢 Healthy | `:8080` | [http://localhost:8080/health](http://localhost:8080/health) |
+| **Swagger UI / OpenAPI** | 🟢 Ready | `:8080/swagger-ui.html` | [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html) |
 | **Agent REST Query** | 🟢 Ready | `:8080/api/v1/query` | `POST /api/v1/query` |
 | **Real-time SSE Stream** | 🟢 Ready | `:8080/api/v1/query/stream` | `POST /api/v1/query/stream` |
 | **Embedded MCP Server** | 🟢 Active | `:8080` (SSE / JSON-RPC) | [http://localhost:8080/sse](http://localhost:8080/sse) / `POST /messages` |
@@ -257,24 +258,25 @@ Whenever the agent sets up the environment (Option A or Option B), it must:
 ### 📊 Data Pipeline Verification
 - **Kafka Stream**: Confirmed messages published to topic `system-logs` keyed by `serviceName`.
 - **In-Process ONNX Embeddings**: Generated 384-dimensional dense vectors with `All-MiniLM-L6-v2` in JVM.
-- **Embedded Lucene Index**: Vectors indexed in real-time with HNSW cosine similarity.
+- **Embedded Lucene Index**: Vectors indexed in real-time with HNSW cosine similarity + `LongPoint` timestamp range index.
 
 ### 🚀 Immediate Next Steps for Testing
-1. **Instant Semantic Test Query**:
+1. **Interactive Swagger UI**: Open `http://localhost:8080/swagger-ui.html` in your browser.
+2. **Instant Semantic Test Query**:
    ```bash
    curl -s -X POST http://localhost:8080/api/v1/query \
      -H "Content-Type: application/json" \
      -d '{"prompt": "Investigate why checkout is failing and analyze errors in payment-gateway", "k": 5}'
    ```
-2. **Instant Token-by-Token Streaming Query**:
+3. **Instant Token-by-Token Streaming Query**:
    ```bash
    curl -N -X POST http://localhost:8080/api/v1/query/stream \
      -H "Content-Type: application/json" \
      -H "Accept: text/event-stream" \
      -d '{"prompt": "Summarize recent error trends across services", "k": 3}'
    ```
-3. **Model Context Protocol (MCP) Inspection**: Connect Cursor IDE or Claude Desktop to `http://localhost:8080/sse`.
-4. **Shutdown**: Run `docker compose down -v` (Option A) or stop Spring Boot and run `docker compose -f docker-compose.infra.yml down` (Option B).
+4. **Model Context Protocol (MCP) Inspection**: Connect Cursor IDE or Claude Desktop to `http://localhost:8080/sse`.
+5. **Shutdown**: Run `docker compose down -v` (Option A) or stop Spring Boot and run `docker compose -f docker-compose.infra.yml down` (Option B).
 ```
 
 ---
@@ -283,10 +285,11 @@ Whenever the agent sets up the environment (Option A or Option B), it must:
 
 Guide the user through these test scenarios to demonstrate system capabilities:
 
-### Test 1: Liveness Health Check
+### Test 1: Liveness Health Check & OpenAPI Specs
 ```bash
 # cURL
 curl -X GET http://localhost:8080/health
+curl -X GET http://localhost:8080/v3/api-docs
 
 # PowerShell
 Invoke-RestMethod -Uri "http://localhost:8080/health" -Method Get
@@ -320,8 +323,8 @@ Invoke-RestMethod -Uri "http://localhost:8080/api/v1/query" `
 - Verify that `answer` contains a natural-language diagnostic report (Executive Summary, Timeline, Root Cause, Actionable Remediation).
 - Verify that `sources` contains citations with `serviceName`, `logLevel`, `timestamp`, `score`, and `excerpt`.
 
-### Test 3: Statistical Query (Aggregate Tool Call)
-Ask a question that triggers the `logStats` tool:
+### Test 3: Statistical Query (Sliding Time Window Tool Call)
+Ask a question that triggers the `logStats` tool (backed by Lucene `LongPoint` sliding time-window queries):
 ```bash
 curl -X POST http://localhost:8080/api/v1/query \
   -H "Content-Type: application/json" \
@@ -331,7 +334,7 @@ curl -X POST http://localhost:8080/api/v1/query \
   }'
 ```
 **Evaluation Check:**
-- Verify that the agent calls `logStats` and summarizes the error count and distribution across microservices.
+- Verify that the agent calls `logStats` and summarizes the error count and distribution across microservices within the requested 15-minute window.
 
 ### Test 4: Real-Time SSE Token Streaming (POST `/api/v1/query/stream`)
 Test low-latency token-by-token streaming powered by Virtual Threads:
@@ -453,7 +456,7 @@ In Claude Desktop configuration (`%APPDATA%\Claude\claude_desktop_config.json` o
 ```
 
 ### Test 7: Automated Test Suite & Quality Gates
-Run the full automated test suite (covering unit logic, in-process ONNX embeddings, embedded Lucene indexing, REST controllers, and MCP protocol):
+Run the full automated test suite (covering unit logic, in-process ONNX embeddings, embedded Lucene indexing + sliding time-window queries, OpenAPI config, REST controllers, MCP server & dynamic MCP client, and LLM observability listener):
 ```bash
 mvn clean test
 ```
@@ -471,7 +474,7 @@ mvn clean test
 
 | Symptom | Root Cause | Solution for the Agent |
 |---|---|---|
-| `UnsupportedClassVersionError` or `Java version mismatch` | System is using Java < 21 | Ensure Java 21+ is active. On Windows PowerShell: `$env:JAVA_HOME = "C:\Users\Utente\.jdks\ms-21.0.12.1"` |
+| `UnsupportedClassVersionError` or `Java version mismatch` | System is using Java < 21 | Ensure Java 21+ is active. On Windows PowerShell: `$env:JAVA_HOME = "C:\path\to\jdk-21"` |
 | `Connection refused: localhost:9092` | Kafka broker is not up or still initializing KRaft | Check `docker ps`. Verify `streaming-rag-kafka` container is healthy or run `docker compose -f docker-compose.infra.yml up -d` |
 | `Ollama connection error` or timeout (`port 11434`) | Ollama daemon not running or blocked | In Option A: check `docker compose logs ollama`. In Option B: run `ollama serve` or check `ollama list`. Verify model `llama3.2:3b` is pulled |
 | `Model llama3.2:3b not found` in Option A | Ollama container initialized without model pull | Run `docker exec streaming-rag-ollama ollama pull llama3.2:3b` |

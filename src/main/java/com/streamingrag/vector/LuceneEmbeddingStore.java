@@ -13,6 +13,7 @@ import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.KnnFloatVectorField;
+import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
@@ -22,6 +23,8 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.KnnFloatVectorQuery;
+import org.apache.lucene.search.MatchAllDocsQuery;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.SearcherFactory;
 import org.apache.lucene.search.SearcherManager;
@@ -31,6 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -40,8 +44,8 @@ import java.util.UUID;
 
 /**
  * Enterprise Apache Lucene embedded implementation of LangChain4j {@link EmbeddingStore}.
- * Provides in-process, zero-external-dependency dense vector indexing and cosine k-NN similarity search
- * powered by Lucene's native HNSW graph structures ({@link KnnFloatVectorField} and {@link KnnFloatVectorQuery}).
+ * Provides in-process, zero-external-dependency dense vector indexing, cosine k-NN similarity search,
+ * and sliding time-window range queries powered by Lucene's native HNSW graph and point structures.
  */
 public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, AutoCloseable {
 
@@ -52,6 +56,9 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, AutoCl
     public static final String FIELD_TEXT = "text";
     public static final String FIELD_TEXT_CONTENT = "text_content";
     public static final String FIELD_METADATA = "metadata";
+    public static final String FIELD_TIMESTAMP_MS = "timestamp_ms";
+
+    private static final int MAX_WINDOW_DOCS = 10_000;
 
     private final Directory directory;
     private final StandardAnalyzer analyzer;
@@ -176,21 +183,7 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, AutoCl
                 Document doc = searcher.storedFields().document(scoreDoc.doc);
                 String id = doc.get(FIELD_ID);
                 String text = doc.get(FIELD_TEXT);
-                String metadataJson = doc.get(FIELD_METADATA);
-
-                Metadata metadata;
-                if (metadataJson != null && !metadataJson.isBlank()) {
-                    try {
-                        Map<String, Object> map = objectMapper.readValue(
-                                metadataJson, new TypeReference<Map<String, Object>>() {});
-                        metadata = Metadata.from(map);
-                    } catch (Exception ex) {
-                        log.warn("[LUCENE] Failed to deserialize metadata for doc id={}: {}", id, ex.getMessage());
-                        metadata = new Metadata();
-                    }
-                } else {
-                    metadata = new Metadata();
-                }
+                Metadata metadata = extractMetadata(doc, id);
 
                 TextSegment segment = TextSegment.from(text != null ? text : "", metadata);
                 matches.add(new EmbeddingMatch<>(score, id, null, segment));
@@ -200,6 +193,65 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, AutoCl
         } catch (IOException e) {
             log.error("[LUCENE ERROR] Failed searching vector store: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to execute k-NN vector search in Lucene: " + e.getMessage(), e);
+        } finally {
+            if (searcher != null) {
+                try {
+                    searcherManager.release(searcher);
+                } catch (IOException e) {
+                    log.warn("[LUCENE WARN] Failed releasing searcher: {}", e.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * Queries Lucene for log metadata entries with a timestamp greater than or equal to the given cutoff,
+     * optionally filtered by log level and service name.
+     *
+     * @param cutoff      sliding UTC cutoff timestamp (inclusive); if null, matches all indexed documents
+     * @param logLevel    optional severity filter ('INFO', 'WARN', 'ERROR', or 'ALL')
+     * @param serviceName optional microservice filter or 'ALL'
+     * @return list of matching {@link Metadata} entries within the time window
+     */
+    public List<Metadata> findMetadataSince(Instant cutoff, String logLevel, String serviceName) {
+        Query query = (cutoff != null)
+                ? LongPoint.newRangeQuery(FIELD_TIMESTAMP_MS, cutoff.toEpochMilli(), Long.MAX_VALUE)
+                : new MatchAllDocsQuery();
+
+        boolean filterByLevel = logLevel != null && !logLevel.isBlank() && !"ALL".equalsIgnoreCase(logLevel);
+        boolean filterByService = serviceName != null && !serviceName.isBlank() && !"ALL".equalsIgnoreCase(serviceName);
+
+        IndexSearcher searcher = null;
+        try {
+            searcher = searcherManager.acquire();
+            TopDocs topDocs = searcher.search(query, MAX_WINDOW_DOCS);
+
+            List<Metadata> results = new ArrayList<>();
+            for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                Document doc = searcher.storedFields().document(scoreDoc.doc);
+                String id = doc.get(FIELD_ID);
+                Metadata metadata = extractMetadata(doc, id);
+
+                if (filterByLevel) {
+                    String docLevel = metadata.getString("log_level");
+                    if (docLevel == null || !docLevel.equalsIgnoreCase(logLevel)) {
+                        continue;
+                    }
+                }
+
+                if (filterByService) {
+                    String docService = metadata.getString("service_name");
+                    if (docService == null || !docService.equalsIgnoreCase(serviceName)) {
+                        continue;
+                    }
+                }
+
+                results.add(metadata);
+            }
+            return results;
+        } catch (IOException e) {
+            log.error("[LUCENE ERROR] Failed querying metadata since {}: {}", cutoff, e.getMessage(), e);
+            throw new RuntimeException("Failed to execute timestamp range query in Lucene: " + e.getMessage(), e);
         } finally {
             if (searcher != null) {
                 try {
@@ -251,6 +303,21 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, AutoCl
         }
     }
 
+    private Metadata extractMetadata(Document doc, String id) {
+        String metadataJson = doc.get(FIELD_METADATA);
+        if (metadataJson != null && !metadataJson.isBlank()) {
+            try {
+                Map<String, Object> map = objectMapper.readValue(
+                        metadataJson, new TypeReference<Map<String, Object>>() {});
+                return Metadata.from(map);
+            } catch (Exception ex) {
+                log.warn("[LUCENE] Failed to deserialize metadata for doc id={}: {}", id, ex.getMessage());
+                return new Metadata();
+            }
+        }
+        return new Metadata();
+    }
+
     private Document buildDocument(String id, Embedding embedding, TextSegment textSegment) throws IOException {
         Document doc = new Document();
         doc.add(new StringField(FIELD_ID, id, Field.Store.YES));
@@ -268,6 +335,17 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, AutoCl
             if (textSegment.metadata() != null) {
                 String metadataJson = objectMapper.writeValueAsString(textSegment.metadata().toMap());
                 doc.add(new StoredField(FIELD_METADATA, metadataJson));
+
+                String timestampStr = textSegment.metadata().getString("timestamp");
+                if (timestampStr != null && !timestampStr.isBlank()) {
+                    try {
+                        long epochMilli = Instant.parse(timestampStr).toEpochMilli();
+                        doc.add(new LongPoint(FIELD_TIMESTAMP_MS, epochMilli));
+                        doc.add(new StoredField(FIELD_TIMESTAMP_MS, epochMilli));
+                    } catch (Exception ex) {
+                        log.debug("[LUCENE] Non-ISO-8601 timestamp '{}' on doc id={}: {}", timestampStr, id, ex.getMessage());
+                    }
+                }
             }
         }
 

@@ -2,6 +2,7 @@ package com.streamingrag.vector;
 
 import com.streamingrag.model.LogLevel;
 import com.streamingrag.model.SystemLog;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
@@ -17,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +30,9 @@ class VectorStoreRepositoryTest {
 
     @Mock
     private EmbeddingStore<TextSegment> embeddingStore;
+
+    @Mock
+    private LuceneEmbeddingStore luceneEmbeddingStore;
 
     @Mock
     private EmbeddingService embeddingService;
@@ -80,5 +85,22 @@ class VectorStoreRepositoryTest {
         assertThat(results).hasSize(1);
         assertThat(results.get(0).score()).isEqualTo(0.92);
         assertThat(results.get(0).embedded().text()).isEqualTo("match");
+    }
+
+    @Test
+    @DisplayName("Should delegate findMetadataSince to LuceneEmbeddingStore when backed by Lucene")
+    void shouldDelegateFindMetadataSinceToLuceneStore() {
+        VectorStoreRepository luceneRepo = new VectorStoreRepository(luceneEmbeddingStore, embeddingService);
+        Instant cutoff = Instant.now().minusSeconds(900);
+        Metadata meta = Metadata.from(Map.of("service_name", "payment-gateway", "log_level", "ERROR"));
+
+        when(luceneEmbeddingStore.findMetadataSince(cutoff, "ERROR", "payment-gateway"))
+                .thenReturn(List.of(meta));
+
+        List<Metadata> results = luceneRepo.findMetadataSince(cutoff, "ERROR", "payment-gateway");
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getString("service_name")).isEqualTo("payment-gateway");
+        verify(luceneEmbeddingStore).findMetadataSince(cutoff, "ERROR", "payment-gateway");
     }
 }

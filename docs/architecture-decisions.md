@@ -17,6 +17,11 @@ This document records the critical architectural choices made during the develop
 | [**ADR-07**](#adr-07-kafka-kraft-mode-over-zookeeper) | Kafka KRaft Mode over ZooKeeper | **Accepted** | Ingestion & Streaming |
 | [**ADR-08**](#adr-08-kafka-partitioning-key-by-servicename) | Kafka Partitioning Key by `serviceName` | **Accepted** | Ingestion & Ordering |
 | [**ADR-09**](#adr-09-single-multi-stage-docker-image-with-distroless-temurin-runtime) | Single Multi-Stage Docker Image with Temurin JRE 21 Runtime | **Accepted** | Infrastructure & Packaging |
+| [**ADR-10**](#adr-10-interactive-openapi-30--swagger-ui-via-springdoc) | Interactive OpenAPI 3.0 & Swagger UI via Springdoc | **Accepted** | API & Developer Experience |
+| [**ADR-11**](#adr-11-sliding-time-windowed-statistics-via-lucene-longpoint-range-queries) | Sliding Time-Windowed Statistics via Lucene `LongPoint` Range Queries | **Accepted** | Vector Storage & Analytics |
+| [**ADR-12**](#adr-12-dynamic-external-mcp-client--unified-tool-registry) | Dynamic External MCP Client & Unified Tool Registry | **Accepted** | Interoperability & Agentic Layer |
+| [**ADR-13**](#adr-13-cloud-native-kubernetes-packaging-with-helm-3--automated-kind-provisioning) | Cloud-Native Kubernetes Packaging with Helm 3 & Automated Kind Provisioning | **Accepted** | Infrastructure & Packaging |
+| [**ADR-14**](#adr-14-llm-observability--langsmith-trace-forwarding-via-chatmodellistener) | LLM Observability & LangSmith Trace Forwarding via `ChatModelListener` | **Accepted** | Observability & LLMOps |
 
 ---
 
@@ -43,8 +48,8 @@ We standardized on **Java 21 LTS** and enabled **Spring Boot Virtual Threads** (
 * **Observability:** Native JVM profilers (Async Profiler, JFR) retain clear, chronological thread visibility.
 
 ### Code References
-* [`src/main/resources/application.yml`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/resources/application.yml#L7-L9) (lines 7–9)
-* [`src/main/java/com/streamingrag/api/QueryController.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/api/QueryController.java#L71-L75) (lines 71–75)
+* [`src/main/resources/application.yml`](../src/main/resources/application.yml#L7-L9)
+* [`src/main/java/com/streamingrag/api/QueryController.java`](../src/main/java/com/streamingrag/api/QueryController.java#L85-L90)
 
 ---
 
@@ -70,9 +75,9 @@ We adopted **LangChain4j** (`0.35.0+`).
 * **Pluggable Vector Store Abstraction:** The clean `EmbeddingStore<TextSegment>` abstraction allows plugging in our native Apache Lucene vector store seamlessly.
 
 ### Code References
-* [`pom.xml`](file:///c:/Users/Utente/Projects/streaming-rag-java/pom.xml#L50-L65) (lines 50–65)
-* [`src/main/java/com/streamingrag/config/LangChainConfig.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/config/LangChainConfig.java#L106-L119) (lines 106–119)
-* [`src/main/java/com/streamingrag/agent/SreAnalystAgent.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/agent/SreAnalystAgent.java)
+* [`pom.xml`](../pom.xml#L58-L73)
+* [`src/main/java/com/streamingrag/config/LangChainConfig.java`](../src/main/java/com/streamingrag/config/LangChainConfig.java)
+* [`src/main/java/com/streamingrag/agent/SreAnalystAgent.java`](../src/main/java/com/streamingrag/agent/SreAnalystAgent.java)
 
 ---
 
@@ -99,8 +104,8 @@ We adopted **in-process `all-MiniLM-L6-v2`** using **LangChain4j ONNX Runtime bi
 * **Zero External Dependencies:** No external Python runtime or model microservice needed.
 
 ### Code References
-* [`src/main/java/com/streamingrag/config/LangChainConfig.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/config/LangChainConfig.java#L46-L54) (lines 46–54)
-* [`src/main/java/com/streamingrag/vector/EmbeddingService.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/vector/EmbeddingService.java#L46-L56) (lines 46–56)
+* [`src/main/java/com/streamingrag/config/LangChainConfig.java`](../src/main/java/com/streamingrag/config/LangChainConfig.java#L52-L60)
+* [`src/main/java/com/streamingrag/vector/EmbeddingService.java`](../src/main/java/com/streamingrag/vector/EmbeddingService.java#L46-L56)
 
 ---
 
@@ -125,8 +130,8 @@ We configured Spring Kafka with **`AckMode.MANUAL_IMMEDIATE`**, committing consu
 * **Dead Letter Recovery:** If indexing fails permanently, Spring Kafka's `DefaultErrorHandler` retries twice before routing the record to `system-logs-dlq`.
 
 ### Code References
-* [`src/main/java/com/streamingrag/config/KafkaConfig.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/config/KafkaConfig.java#L103-L113) (lines 103–113)
-* [`src/main/java/com/streamingrag/consumer/LogIngestionConsumer.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/consumer/LogIngestionConsumer.java#L52-L71) (lines 52–71)
+* [`src/main/java/com/streamingrag/config/KafkaConfig.java`](../src/main/java/com/streamingrag/config/KafkaConfig.java#L103-L113)
+* [`src/main/java/com/streamingrag/consumer/LogIngestionConsumer.java`](../src/main/java/com/streamingrag/consumer/LogIngestionConsumer.java#L52-L71)
 
 ---
 
@@ -152,9 +157,9 @@ We implemented the **Model Context Protocol (MCP)** specification via native Spr
 * **Shared Tool Implementation:** Both internal `@AiService` and external MCP hosts query the same underlying `SreTools` and Lucene vector store.
 
 ### Code References
-* [`src/main/java/com/streamingrag/mcp/McpProtocol.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/mcp/McpProtocol.java)
-* [`src/main/java/com/streamingrag/mcp/McpService.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/mcp/McpService.java)
-* [`src/main/java/com/streamingrag/mcp/McpSseController.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/mcp/McpSseController.java)
+* [`src/main/java/com/streamingrag/mcp/McpProtocol.java`](../src/main/java/com/streamingrag/mcp/McpProtocol.java)
+* [`src/main/java/com/streamingrag/mcp/McpService.java`](../src/main/java/com/streamingrag/mcp/McpService.java)
+* [`src/main/java/com/streamingrag/mcp/McpSseController.java`](../src/main/java/com/streamingrag/mcp/McpSseController.java)
 
 ---
 
@@ -181,8 +186,8 @@ We replaced ChromaDB with **Apache Lucene 9.12.0** as an embedded in-process vec
 * **Dual-Mode Backend:** Supports persistent disk storage (`FSDirectory`) for production/Docker and in-memory storage (`ByteBuffersDirectory`) for rapid automated testing.
 
 ### Code References
-* [`src/main/java/com/streamingrag/vector/LuceneEmbeddingStore.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/vector/LuceneEmbeddingStore.java)
-* [`src/main/java/com/streamingrag/config/LangChainConfig.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/config/LangChainConfig.java#L61-L75) (lines 61–75)
+* [`src/main/java/com/streamingrag/vector/LuceneEmbeddingStore.java`](../src/main/java/com/streamingrag/vector/LuceneEmbeddingStore.java)
+* [`src/main/java/com/streamingrag/config/LangChainConfig.java`](../src/main/java/com/streamingrag/config/LangChainConfig.java#L65-L81)
 
 ---
 
@@ -208,8 +213,8 @@ We adopted **Kafka KRaft Mode** using `apache/kafka:3.7.0` with combined broker 
 * **Modern Standards:** Prepares the architecture for modern production Kafka topologies (ZooKeeper has been officially deprecated by the Apache Kafka project).
 
 ### Code References
-* [`docker-compose.yml`](file:///c:/Users/Utente/Projects/streaming-rag-java/docker-compose.yml#L8-L31) (lines 8–31)
-* [`docker-compose.infra.yml`](file:///c:/Users/Utente/Projects/streaming-rag-java/docker-compose.infra.yml#L14-L37) (lines 14–37)
+* [`docker-compose.yml`](../docker-compose.yml#L8-L31)
+* [`docker-compose.infra.yml`](../docker-compose.infra.yml#L14-L37)
 
 ---
 
@@ -235,8 +240,8 @@ We chose to **partition explicitly by `serviceName`**.
 * **Trade-Off (Partition Hotspotting):** If one service logs orders of magnitude more events than others, its assigned partition receives disproportionate traffic. Mitigated in production by partition balancing and log sampling.
 
 ### Code References
-* [`src/main/java/com/streamingrag/producer/LogProducerService.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/producer/LogProducerService.java#L46-L51) (lines 46–51)
-* [`src/main/java/com/streamingrag/model/SystemLog.java`](file:///c:/Users/Utente/Projects/streaming-rag-java/src/main/java/com/streamingrag/model/SystemLog.java)
+* [`src/main/java/com/streamingrag/producer/LogProducerService.java`](../src/main/java/com/streamingrag/producer/LogProducerService.java#L46-L51)
+* [`src/main/java/com/streamingrag/model/SystemLog.java`](../src/main/java/com/streamingrag/model/SystemLog.java)
 
 ---
 
@@ -261,5 +266,132 @@ We designed a **multi-stage `Dockerfile`** using `maven:3.9.9-eclipse-temurin-21
 * **Fast Layer Caching:** `pom.xml` dependencies are fetched offline prior to source compilation, accelerating incremental builds.
 
 ### Code References
-* [`Dockerfile`](file:///c:/Users/Utente/Projects/streaming-rag-java/Dockerfile#L6-L43) (lines 6–43)
-* [`.github/workflows/ci.yml`](file:///c:/Users/Utente/Projects/streaming-rag-java/.github/workflows/ci.yml#L45-L66) (lines 45–66)
+* [`Dockerfile`](../Dockerfile#L6-L43)
+* [`.github/workflows/ci.yml`](../.github/workflows/ci.yml#L45-L66)
+
+---
+
+## ADR-10: Interactive OpenAPI 3.0 & Swagger UI via Springdoc
+
+### Status
+**Accepted**
+
+### Context & Problem Statement
+In the Python sister project (`streaming-rag`), FastAPI automatically generates OpenAPI 3.0 specifications and serves an interactive Swagger UI playground at `/docs`. Spring Boot does not expose OpenAPI documentation out of the box, requiring engineers and evaluators to rely solely on external `curl` commands.
+
+### Considered Alternatives
+1. **Static Markdown API Documentation Only:** Prone to drift and lacks an interactive browser playground.
+2. **Springfox Swagger:** Unmaintained and incompatible with Spring Boot 3 / Jakarta EE 10.
+3. **Springdoc OpenAPI (`springdoc-openapi-starter-webmvc-ui` 2.6.0):** Official community standard for Spring Boot 3.x supporting Jakarta validation, Java 21 records, and OpenAPI 3.0 annotations.
+
+### Decision Outcome
+We integrated **`springdoc-openapi-starter-webmvc-ui:2.6.0`**, configured `OpenApiConfig`, and annotated controllers and Java 21 DTO records with `@Tag`, `@Operation`, and `@Schema`.
+
+### Decision Rationales & Trade-Offs
+* **Interactive Playground:** Exposes `/swagger-ui.html` and `/v3/api-docs` out of the box, matching FastAPI's developer ergonomics.
+* **Java 21 Record Introspection:** Automatically reflects Jakarta Bean Validation constraints (`@NotBlank`) and `@Schema` metadata on `QueryRequest`, `QueryResponse`, and `LogSource`.
+
+### Code References
+* [`src/main/java/com/streamingrag/config/OpenApiConfig.java`](../src/main/java/com/streamingrag/config/OpenApiConfig.java)
+* [`src/main/java/com/streamingrag/api/QueryController.java`](../src/main/java/com/streamingrag/api/QueryController.java)
+
+---
+
+## ADR-11: Sliding Time-Windowed Statistics via Lucene `LongPoint` Range Queries
+
+### Status
+**Accepted**
+
+### Context & Problem Statement
+Initially, `SreTools.logStats(logLevel, serviceName, minutes)` returned cumulative in-memory counters accumulated since process startup, ignoring the `minutes` time-window parameter. In contrast, the Python sister project filters vector store metadata against a sliding UTC timestamp cutoff (`now - timedelta(minutes=minutes)`).
+
+### Considered Alternatives
+1. **Cumulative In-Memory Counters Only:** Fast, but cannot filter by arbitrary sliding time windows (`minutes=5` vs `minutes=60`).
+2. **Full Index Scan & String Parsing:** Scanning all stored documents and parsing ISO-8601 strings on every query; $O(N)$ overhead as the index grows.
+3. **Lucene `LongPoint` BKD-Tree Numeric Range Index (`timestamp_ms`):** Indexing each log's epoch millisecond timestamp in a Lucene `LongPoint` dimensional index alongside stored metadata, and executing `LongPoint.newRangeQuery("timestamp_ms", cutoff.toEpochMilli(), Long.MAX_VALUE)`.
+
+### Decision Outcome
+We enhanced `LuceneEmbeddingStore` to index `FIELD_TIMESTAMP_MS` (`LongPoint` + `StoredField`) and added `findMetadataSince(Instant cutoff, String logLevel, String serviceName)` backed by `LongPoint.newRangeQuery(...)`.
+
+### Decision Rationales & Trade-Offs
+* **Sub-Millisecond Range Filtering:** Lucene's BKD-tree (`LongPoint`) executes numeric timestamp range queries in $O(\log N)$ time.
+* **Accurate Sliding Window Analytics:** `SreTools.logStats` now computes accurate severity and service distributions strictly within `Instant.now().minus(Duration.ofMinutes(effectiveMinutes))`.
+
+### Code References
+* [`src/main/java/com/streamingrag/vector/LuceneEmbeddingStore.java`](../src/main/java/com/streamingrag/vector/LuceneEmbeddingStore.java#L204-L261)
+* [`src/main/java/com/streamingrag/agent/SreTools.java`](../src/main/java/com/streamingrag/agent/SreTools.java#L105-L165)
+
+---
+
+## ADR-12: Dynamic External MCP Client & Unified Tool Registry
+
+### Status
+**Accepted**
+
+### Context & Problem Statement
+While the application acted as an MCP server exposing `vector_search` and `log_stats`, the internal `SreAnalystAgent` could not dynamically discover and invoke tools hosted on external MCP servers (configured via `MCP_SERVER_URL`), unlike the Python project's `MultiServerMCPClient`.
+
+### Considered Alternatives
+1. **Static Hardcoded Java `@Tool` Classes Only:** Requires recompiling the application whenever a new external diagnostic tool is added.
+2. **Dynamic JSON-RPC 2.0 MCP Client (`McpClientService`) + LangChain4j `ToolSpecification` / `ToolExecutor` Map:** Discovers tools from `MCP_SERVER_URL` via `tools/list`, converts their JSON Schema into LangChain4j `ToolSpecification` instances, and routes executions over `tools/call`, merging them with native `SreTools`.
+
+### Decision Outcome
+We implemented **`McpClientService`** and wired `LangChainConfig.sreAnalystAgent` to register the unified map of native `SreTools` and dynamically discovered external MCP tools, with graceful fallback to native tools when `MCP_SERVER_URL` is unconfigured or unreachable.
+
+### Decision Rationales & Trade-Offs
+* **Zero-Code Extensibility:** External MCP servers (e.g., PagerDuty, GitHub, Prometheus MCP) can be attached at runtime via `MCP_SERVER_URL`.
+* **Resilient Fallback:** Network errors or unavailable external MCP servers never prevent the agent from starting or using native `vectorSearch` and `logStats` tools.
+
+### Code References
+* [`src/main/java/com/streamingrag/mcp/McpClientService.java`](../src/main/java/com/streamingrag/mcp/McpClientService.java)
+* [`src/main/java/com/streamingrag/config/LangChainConfig.java`](../src/main/java/com/streamingrag/config/LangChainConfig.java#L118-L138)
+
+---
+
+## ADR-13: Cloud-Native Kubernetes Packaging with Helm 3 & Automated Kind Provisioning
+
+### Status
+**Accepted**
+
+### Context & Problem Statement
+Deploying only the Spring Boot Deployment in Kubernetes leaves evaluators to manually wire Kafka KRaft, Ollama model initialization jobs, persistent volumes, and secrets. We needed a self-contained cloud-native Helm chart and local Kind cluster automation matching the Python sister repository.
+
+### Considered Alternatives
+1. **App-Only Kubernetes Manifests:** Incomplete; fails unless external Kafka and Ollama clusters already exist.
+2. **Full-Stack Parameterized Helm 3 Chart + `scripts/kind-deploy.sh`:** Packages Kafka KRaft (`kafka.yaml`), Ollama + `ollama-init` hook Job (`ollama.yaml`), PVC-backed Spring Boot app with embedded Lucene (`deployment.yaml`), ConfigMap, and Secret templates.
+
+### Decision Outcome
+We upgraded `charts/streaming-rag/` to a full-stack Helm 3 chart and created `scripts/kind-deploy.sh` for single-command local Kubernetes validation on Kind.
+
+### Decision Rationales & Trade-Offs
+* **Eliminates ChromaDB Pod in Kubernetes:** Because Apache Lucene and ONNX Runtime run embedded inside the Spring Boot container, the Kubernetes topology requires fewer pods and lower cluster memory than the Python stack.
+* **Automated Model Readiness:** The `ollama-init` Helm hook Job and `wait-for-ollama-model` initContainer guarantee `llama3.2:3b` is pulled before traffic is routed.
+
+### Code References
+* [`charts/streaming-rag/`](../charts/streaming-rag/Chart.yaml)
+* [`scripts/kind-deploy.sh`](../scripts/kind-deploy.sh)
+
+---
+
+## ADR-14: LLM Observability & LangSmith Trace Forwarding via `ChatModelListener`
+
+### Status
+**Accepted**
+
+### Context & Problem Statement
+Production agentic systems require visibility into LLM prompt/response latencies, token consumption (`inputTokens`, `outputTokens`, `totalTokens`), tool execution requests, and error rates, as well as compatibility with LangSmith tracing (`LANGCHAIN_TRACING_V2=true`).
+
+### Considered Alternatives
+1. **Uninstrumented LLM Calls:** Opaque latency bottlenecks and unmonitored token usage.
+2. **LangChain4j `ChatModelListener` (`LlmObservabilityListener`) with Async LangSmith Run Exporter:** Hooks directly into `OllamaChatModel` and `OllamaStreamingChatModel` lifecycle events (`onRequest`, `onResponse`, `onError`), recording atomic metrics, structured logs, and non-blocking HTTP trace dispatches to LangSmith's `/runs` API.
+
+### Decision Outcome
+We implemented **`LlmObservabilityListener`** implementing `ChatModelListener` and registered it on both `OllamaChatModel` and `OllamaStreamingChatModel`.
+
+### Decision Rationales & Trade-Offs
+* **Zero Latency Penalty:** LangSmith trace payloads are dispatched asynchronously via `HttpClient.sendAsync(...)`, never blocking the LLM response path.
+* **Environment Variable Parity:** Honors the exact same environment variables (`LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT`, `LANGCHAIN_ENDPOINT`) as the Python sister project.
+
+### Code References
+* [`src/main/java/com/streamingrag/config/LlmObservabilityListener.java`](../src/main/java/com/streamingrag/config/LlmObservabilityListener.java)
+* [`src/main/java/com/streamingrag/config/LangChainConfig.java`](../src/main/java/com/streamingrag/config/LangChainConfig.java#L83-L116)

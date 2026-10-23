@@ -77,6 +77,7 @@ When indexed into the embedded Apache Lucene vector database, each document cont
 | `text` | `StoredField` | Full normalized log text representation |
 | `text_content` | `TextField` (Analyzed) | Standard-analyzed full text for lexical search |
 | `metadata` | `StoredField` (JSON) | Serialized metadata map for citation reconstruction |
+| `timestamp_ms` | `LongPoint` + `StoredField` | Epoch millisecond timestamp indexed in Lucene's BKD-tree for sliding time-window range queries |
 
 ### Metadata JSON Schema
 ```json
